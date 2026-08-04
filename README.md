@@ -26,11 +26,23 @@ to work.
 
 ## 1. Set up the companion server
 
-Requires Python 3.10+, and `espeak-ng` installed system-wide (used by
-the phonemizer for out-of-dictionary words):
+Requires **Python 3.10, 3.11, or 3.12 specifically** (the `kokoro`
+package doesn't support 3.13+ yet), and `espeak-ng` installed
+system-wide (used by the phonemizer for out-of-dictionary words):
 
 ```bash
 sudo apt install espeak-ng      # or: pacman -S espeak-ng / dnf install espeak-ng
+```
+
+On a rolling-release distro (Arch, etc.) the official repos often only
+ship the latest Python, with no easy package for an older minor
+version. `install.sh` looks for `python3.12`/`3.11`/`3.10` on `PATH`
+first; if none are found but [`uv`](https://docs.astral.sh/uv/) is
+installed, it uses that to fetch an isolated Python 3.12 without
+touching your system Python at all. Easiest fix if you hit this:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 ```bash
