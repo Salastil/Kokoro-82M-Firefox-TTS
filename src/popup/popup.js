@@ -28,7 +28,8 @@ function populateVoices(selected) {
 
 function deviceNote(state) {
   if (!state.serverDevice) return "";
-  return state.serverDevice === "cuda" ? " · server GPU" : " · server CPU";
+  if (state.serverDevice !== "cuda") return " · server CPU";
+  return state.serverGpuBackend === "rocm" ? " · server GPU (ROCm)" : " · server GPU (CUDA)";
 }
 
 function statusLabel(state) {

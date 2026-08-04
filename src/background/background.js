@@ -116,6 +116,7 @@ const state = {
   progress: { segmentIndex: 0, segmentCount: 0 },
   errorMessage: null,
   serverDevice: null, // "cuda" | "cpu" | null -- last known, from /health
+  serverGpuBackend: null, // "rocm" | "cuda" | null -- last known, from /health
 };
 
 function resetState() {
@@ -181,6 +182,7 @@ async function startJob({ tabId, mode, title, segments }) {
   }
   if (jobId !== activeJobId) return;
   state.serverDevice = health.device || null;
+  state.serverGpuBackend = health.gpuBackend || null;
   if (health.status !== "ready") {
     failJob(jobId, health.error || `Companion server model isn't ready yet (${health.status}).`);
     return;

@@ -1,0 +1,10 @@
+# torch is deliberately NOT listed here -- install it first, separately,
+# with the wheel matching your hardware (see README.md / install.sh):
+#   AMD GPU (ROCm):  pip install torch --index-url https://download.pytorch.org/whl/rocm6.2
+#   NVIDIA GPU:      pip install torch --index-url https://download.pytorch.org/whl/cu121
+#   CPU only:        pip install torch --index-url https://download.pytorch.org/whl/cpu
+# Then: pip install -r requirements.txt
+fastapi>=0.115
+uvicorn[standard]>=0.30
+kokoro>=0.9.4
+soundfile>=0.12

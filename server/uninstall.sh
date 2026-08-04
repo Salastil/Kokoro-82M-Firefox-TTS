@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Stops and removes the systemd --user service. Leaves config.json
 # (with your token) and any downloaded model cache untouched -- delete
-# ~/.config/kokoro-reader-server and node_modules/ yourself if you
-# want a full clean removal.
+# ~/.config/kokoro-reader-server and server/.venv yourself if you want
+# a full clean removal.
 set -euo pipefail
 
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"

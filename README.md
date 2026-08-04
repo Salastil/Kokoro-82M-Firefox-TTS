@@ -2,20 +2,22 @@
 
 A cross-browser extension (Firefox + Chromium: Brave, Chrome, etc.)
 that reads articles or selected text aloud using
-[Kokoro-82M](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX),
+[Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M),
 synthesized by a small **companion server you run on your own machine**
 -- no cloud TTS API, no text leaving your network. The server prefers
-GPU acceleration (CUDA) when available and transparently falls back to
-CPU otherwise.
+GPU acceleration when available (**NVIDIA via CUDA, AMD via ROCm**) and
+transparently falls back to CPU otherwise.
 
-This used to run entirely in-browser via WASM. It doesn't anymore --
-see "Why a companion server?" below for why that was abandoned.
+This used to run entirely in-browser via WASM, then moved to a Node.js
+companion server that could only accelerate NVIDIA GPUs. Now it's a
+Python server instead, specifically so AMD GPUs (ROCm) work too -- see
+"Why Python, and why a companion server at all?" below.
 
 ## Components
 
 ```
 extension/     the browser extension (Manifest V3, Firefox + Chromium)
-server/        the companion TTS server (Node.js + kokoro-js)
+server/        the companion TTS server (Python + the `kokoro` package)
 ```
 
 They're independent: the server has no browser dependency and can run
@@ -24,16 +26,24 @@ to work.
 
 ## 1. Set up the companion server
 
-Requires Node.js 20+.
+Requires Python 3.10+, and `espeak-ng` installed system-wide (used by
+the phonemizer for out-of-dictionary words):
+
+```bash
+sudo apt install espeak-ng      # or: pacman -S espeak-ng / dnf install espeak-ng
+```
 
 ```bash
 cd server
 ./install.sh
 ```
 
-This installs dependencies, and installs + starts a `systemd --user`
-service that keeps the server running (and restarts it if it crashes).
-To also have it start at boot without logging in first:
+This creates a venv, detects your GPU and installs a matching `torch`
+build (ROCm for AMD, CUDA for NVIDIA, plain CPU otherwise -- see
+"GPU acceleration" below), installs the rest of the dependencies, and
+installs + starts a `systemd --user` service that keeps the server
+running (and restarts it if it crashes). To also have it start at boot
+without logging in first:
 
 ```bash
 loginctl enable-linger $USER
@@ -50,8 +60,9 @@ settings in the next step:
 ```
 
 The first request to the server downloads Kokoro-82M's weights from
-Hugging Face (~85MB by default); after that they're cached under the
-server's own cache directory and it starts instantly.
+Hugging Face (~330MB, the original PyTorch checkpoint); after that
+they're cached under Hugging Face's usual local cache
+(`~/.cache/huggingface`) and it starts instantly.
 
 Useful commands:
 
@@ -62,27 +73,29 @@ systemctl --user restart kokoro-reader-server   # after editing config.json
 ```
 
 Config lives at `~/.config/kokoro-reader-server/config.json`
-(`$XDG_CONFIG_HOME` if set) -- port, model precision (`dtype`), and the
-auth token. Restart the service after editing it.
+(`$XDG_CONFIG_HOME` if set) -- port and the auth token. Restart the
+service after editing it.
 
 To run it without systemd (e.g. to test, or on non-Linux):
 
 ```bash
 cd server
-npm install
-npm start
+source .venv/bin/activate
+python -m app.main
 ```
 
 ### GPU acceleration
 
-The server tries CUDA first, then falls back to CPU automatically --
-no configuration needed either way, and `/health` reports which one is
-actually in use. This only helps **NVIDIA** GPUs: the prebuilt
-`onnxruntime-node` binary ships CPU + CUDA/TensorRT execution
-providers on Linux x64, with no ROCm/MIGraphX build for AMD GPUs. On
-AMD (or any non-CUDA) hardware it'll cleanly fall back to CPU -- which
-is still native multi-threaded inference, not the single-threaded WASM
-the in-browser version was stuck with (see below).
+Device selection is handled entirely by PyTorch: the server asks for
+the `cuda` device, and PyTorch auto-detects whether that's actually
+usable, falling back to CPU if not. This isn't NVIDIA-specific despite
+the name -- **ROCm's whole design is that a ROCm-flavored PyTorch
+build makes AMD GPUs answer to the same `torch.cuda` APIs** as NVIDIA
+ones, so the exact same code path accelerates both vendors with zero
+AMD-specific logic needed here. `install.sh` detects your GPU
+(`rocminfo`/`/opt/rocm` for AMD, `nvidia-smi` for NVIDIA) and installs
+the matching `torch` build automatically; `/health` reports which one
+ended up active (`device: "cuda"|"cpu"`, `gpuBackend: "rocm"|"cuda"|null`).
 
 ## 2. Install the extension
 
@@ -157,9 +170,12 @@ extension/
   options/                          companion server URL + token,
                                      voice/speed defaults, chunk size
 server/
-  src/tts.js                        model loading, cuda -> cpu fallback
-  src/app.js                        Express app: /health, /synthesize
-  src/config.js                     config file (port, dtype, token)
+  app/tts.py                        model loading via the `kokoro`
+                                     package; device selection is just
+                                     "ask PyTorch for cuda", which also
+                                     covers AMD/ROCm (see below)
+  app/main.py                       FastAPI app: /health, /synthesize
+  app/config.py                     config file (port, token)
   systemd/                          user service unit template
 ```
 
@@ -174,7 +190,7 @@ chunk the instant the current one's `ended` event fires, reporting
 playback events (which paragraph is current, paused/stopped/done) back
 to background so the popup stays in sync.
 
-## Why a companion server?
+## Why Python, and why a companion server at all?
 
 The original design ran Kokoro-82M entirely in-browser via ONNX
 Runtime Web (WASM), no server at all. That fell apart on real hardware:
@@ -201,6 +217,26 @@ longer "install the extension and go" -- it's a second thing to install
 and keep running. `server/install.sh` and the systemd unit exist to
 make that as close to "install once, forget about it" as possible.
 
+The server was first built in Node.js (reusing `kokoro-js`, the same
+package the in-browser version already used). That worked, but only
+ever accelerated **NVIDIA** GPUs: `onnxruntime-node`'s prebuilt Linux
+binary ships CPU + CUDA/TensorRT execution providers only, with no
+ROCm/MIGraphX build for AMD. There's also no Vulkan execution provider
+in ONNX Runtime at all -- it's been requested repeatedly
+([#21917](https://github.com/microsoft/onnxruntime/issues/21917),
+[#7433](https://github.com/microsoft/onnxruntime/issues/7433)) but
+doesn't exist; the only place Vulkan shows up is as WebGPU's backend on
+Linux, and WebGPU EP is browser-only, not available in `onnxruntime-node`
+in the first place (and is the same code path that produced the
+garbled-audio bug above, so it wouldn't have helped even if it were).
+AMD's actual supported Linux path, ROCm + MIGraphX, only ships prebuilt
+wheels for **Python**, not Node -- so the server is Python now,
+using the official [`kokoro`](https://pypi.org/project/kokoro/) package
+(PyTorch-based) instead of `kokoro-js`. PyTorch's ROCm builds are
+designed so AMD GPUs answer to the same `torch.cuda` APIs NVIDIA GPUs
+do, so `device=None` (auto-detect) covers both vendors with no
+AMD-specific code at all -- see "GPU acceleration" above.
+
 ## Security notes
 
 - The companion server binds to loopback by default
@@ -226,10 +262,16 @@ make that as close to "install once, forget about it" as possible.
 - English only (US/UK voices). Kokoro-82M supports other languages
   upstream, but they need a different phonemizer language pack this
   extension doesn't wire up yet.
-- GPU acceleration is CUDA-only (NVIDIA). AMD/Intel GPUs fall back to
-  CPU -- there's no readily available ROCm/MIGraphX build for
-  `onnxruntime-node`; building one yourself is possible but out of
-  scope here.
+- GPU acceleration covers NVIDIA (CUDA) and AMD (ROCm). Intel GPUs and
+  anything else fall back to CPU -- PyTorch's mainstream GPU backends
+  are CUDA and ROCm; Intel's own PyTorch extension exists but isn't
+  wired up here.
+- `install.sh`'s GPU detection installs a *default* ROCm/CUDA version
+  tag that may not match what's actually installed on your system --
+  if `/health` doesn't report the device you expected, check
+  `torch.version.hip`/`torch.version.cuda` against your driver and
+  reinstall the matching wheel from
+  [pytorch.org/get-started/locally](https://pytorch.org/get-started/locally/).
 - Not signed/listed on AMO or a Chrome/Brave store. `web-ext lint`
   reports 0 errors, 3 expected warnings: `MANIFEST_FIELD_UNSUPPORTED`
   for `background.service_worker` (Firefox doesn't support this key,
@@ -244,9 +286,8 @@ make that as close to "install once, forget about it" as possible.
 
 ## Credits
 
-- [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) by hexgrad (Apache-2.0)
-- [kokoro-js](https://github.com/hexgrad/kokoro/tree/main/kokoro.js) /
-  [@huggingface/transformers](https://github.com/huggingface/transformers.js) (Apache-2.0/MIT)
+- [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) and the
+  [`kokoro`](https://pypi.org/project/kokoro/) Python package by hexgrad (Apache-2.0)
 - [Mozilla Readability](https://github.com/mozilla/readability) (Apache-2.0)
 - [webextension-polyfill](https://github.com/mozilla/webextension-polyfill) (MPL-2.0)
 

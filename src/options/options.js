@@ -70,7 +70,13 @@ testConnectionBtn.addEventListener("click", async () => {
   }
   const health = resp.health;
   if (health.status === "ready") {
-    connectionStatus.textContent = `Connected -- model ready on ${health.device} (${health.dtype}).`;
+    const backend =
+      health.device === "cuda"
+        ? health.gpuBackend === "rocm"
+          ? "GPU (ROCm)"
+          : "GPU (CUDA)"
+        : "CPU";
+    connectionStatus.textContent = `Connected -- model ready on ${backend}.`;
   } else if (health.status === "loading") {
     connectionStatus.textContent = "Connected -- server is still loading the model, try again shortly.";
   } else {
