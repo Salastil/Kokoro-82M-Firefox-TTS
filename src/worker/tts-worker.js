@@ -20,6 +20,22 @@ kokoroEnv.wasmPaths = new URL("../runtime/", import.meta.url).href;
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
+// ONNX Runtime Web only multithreads WASM when this context is
+// cross-origin isolated (SharedArrayBuffer usable); otherwise it
+// silently forces numThreads=1, which on a CPU-bound model like this
+// is the difference between using one core and several -- easily the
+// cause of synthesis falling behind real-time playback ("gaps")
+// regardless of how well the producer/consumer pipeline is written.
+// When isolation is confirmed, push past ORT's own conservative
+// default cap (min(4, cores/2)) since Firefox extension Workers can
+// have many cores to spare.
+const CROSS_ORIGIN_ISOLATED =
+  typeof self !== "undefined" && !!self.crossOriginIsolated && typeof SharedArrayBuffer !== "undefined";
+if (CROSS_ORIGIN_ISOLATED) {
+  const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4;
+  env.backends.onnx.wasm.numThreads = Math.max(1, Math.min(cores, 8));
+}
+
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
 // Firefox's WebGPU support is inconsistent across contexts/platforms:
@@ -121,7 +137,18 @@ async function runJob(jobId, segments, options) {
     return;
   }
   if (jobId !== activeJobId) return;
-  postMessage({ type: "ready", jobId, device, requestedDevice, fellBack, reason });
+  postMessage({
+    type: "ready",
+    jobId,
+    device,
+    requestedDevice,
+    fellBack,
+    reason,
+    // Only meaningful for device === "wasm"; ORT sets this to its
+    // resolved value (possibly forced to 1) once the backend inits.
+    wasmThreads: env.backends.onnx.wasm.numThreads,
+    crossOriginIsolated: CROSS_ORIGIN_ISOLATED,
+  });
 
   for (let segIdx = 0; segIdx < segments.length; segIdx++) {
     if (jobId !== activeJobId) return;

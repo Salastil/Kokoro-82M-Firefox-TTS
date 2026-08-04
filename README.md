@@ -89,10 +89,36 @@ extension/
 
 Text flows as: content script extracts paragraph-level segments (or a
 selection) → background sends them to the worker → worker chunks each
-segment into sentence-sized pieces, synthesizes each with Kokoro-82M
-(WASM, CPU) and posts back WAV audio → background plays chunks back
-sequentially through an `<audio>` element and tells the content script
-which paragraph is currently playing, for highlighting.
+segment into sentence-sized pieces and synthesizes them **back to
+back, continuously** (it never waits for a chunk to finish *playing*
+before starting the next *synthesis* call -- only `tts.generate()`
+itself is sequential, since it's one CPU-bound call after another) →
+each chunk's WAV audio is posted back to the background page as soon
+as it's ready → background queues and plays chunks through an
+`<audio>` element, picking up the next queued chunk the instant the
+current one's `ended` event fires, and tells the content script which
+paragraph is currently playing, for highlighting.
+
+If you notice audible gaps between chunks, that's synthesis falling
+behind real-time playback (each chunk takes longer to generate than it
+takes to speak), not the pipeline waiting around -- see "WASM
+threading" below, the most common cause of that on otherwise-capable
+hardware.
+
+### WASM threading
+
+ONNX Runtime Web only multithreads WASM inference when its context is
+[cross-origin isolated](https://developer.mozilla.org/en-US/docs/Web/API/crossOriginIsolated)
+(`SharedArrayBuffer` usable); otherwise it silently forces
+`numThreads = 1` -- on a many-core machine that's the difference
+between using one core and several, and is a very plausible cause of
+synthesis-falling-behind-realtime "gaps" even though the
+producer/consumer pipeline itself is already correct. When isolation
+is confirmed, `tts-worker.js` raises the thread count past ONNX
+Runtime's own conservative default cap. The actual thread count in use
+is surfaced in the status line while reading (e.g. "· 4 CPU threads",
+or "· 1 CPU thread (slow, see Settings)" if isolation isn't available)
+so this is diagnosable from the UI instead of guessed at.
 
 ## Privacy / what leaves your machine
 

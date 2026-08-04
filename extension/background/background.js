@@ -40,6 +40,8 @@ const state = {
   deviceFellBack: false, // true if webgpu was requested but unavailable, so wasm was used instead
   deviceFallbackReason: null, // "no-navigator-gpu" | "no-adapter" | "adapter-error" | null
   gpuAvailableInWindow: GPU_AVAILABLE_IN_WINDOW, // static fact about this Firefox profile, not job-scoped
+  wasmThreads: null, // actual ONNX Runtime Web WASM thread count in use (device === "wasm")
+  crossOriginIsolated: null, // whether the worker context could multithread WASM at all
 };
 
 function resetState() {
@@ -103,6 +105,8 @@ function onWorkerMessage(event) {
       state.device = msg.device;
       state.deviceFellBack = !!msg.fellBack;
       state.deviceFallbackReason = msg.reason || null;
+      state.wasmThreads = msg.wasmThreads ?? null;
+      state.crossOriginIsolated = !!msg.crossOriginIsolated;
       broadcastState();
       break;
     case "audio": {

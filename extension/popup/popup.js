@@ -43,8 +43,16 @@ function gpuFallbackNote(state) {
   }
 }
 
+function threadNote(state) {
+  if (state.device !== "wasm" || !state.wasmThreads) return "";
+  return state.wasmThreads === 1
+    ? " · 1 CPU thread (slow, see Settings)"
+    : ` · ${state.wasmThreads} CPU threads`;
+}
+
 function statusLabel(state) {
   const gpuNote = gpuFallbackNote(state);
+  const threadsNote = threadNote(state);
   switch (state.status) {
     case "loading-model": {
       const pct = state.modelLoadProgress && state.modelLoadProgress.progress;
@@ -53,11 +61,11 @@ function statusLabel(state) {
         : "Loading Kokoro model… (first use downloads ~85MB, cached after)";
     }
     case "synthesizing":
-      return `Synthesizing…${gpuNote}`;
+      return `Synthesizing…${gpuNote}${threadsNote}`;
     case "playing":
       return (state.progress.segmentCount > 1
         ? `Reading paragraph ${state.progress.segmentIndex + 1} of ${state.progress.segmentCount}`
-        : "Reading…") + gpuNote;
+        : "Reading…") + gpuNote + threadsNote;
     case "paused":
       return "Paused";
     case "error":
