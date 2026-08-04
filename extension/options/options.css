@@ -45,6 +45,14 @@ h2 {
   margin: 0 0 10px;
 }
 
+.hint.warning {
+  opacity: 1;
+  background: rgba(179, 38, 30, 0.12);
+  border: 1px solid rgba(179, 38, 30, 0.35);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
 .field {
   display: flex;
   flex-direction: column;

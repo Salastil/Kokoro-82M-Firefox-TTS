@@ -142,6 +142,14 @@ which paragraph is currently playing, for highlighting.
 
 ## Limitations / known issues (v0.1)
 
+- **GPU acceleration (WebGPU) can produce distorted/garbled audio**
+  ("dog growling") on systems where it's actually exercised, confirmed
+  on Firefox/Linux with a WebGPU-capable GPU. All the audio decode/
+  playback code is identical regardless of backend, so this points to
+  an upstream ONNX Runtime Web WebGPU-backend correctness bug in how
+  it runs Kokoro's vocoder, not something fixable from this extension.
+  CPU (the default) is unaffected. Leave GPU acceleration off unless
+  you're specifically experimenting with it.
 - English only (US/UK voices). Kokoro-82M supports other languages
   upstream, but they need a different phonemizer language pack this
   extension doesn't wire up yet.

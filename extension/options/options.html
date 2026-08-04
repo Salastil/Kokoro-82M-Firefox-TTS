@@ -54,9 +54,16 @@
       tested for. GPU acceleration (WebGPU) is experimental and opt-in -- if your browser or
       system doesn't support it, Kokoro Reader automatically falls back to CPU.
     </p>
+    <p class="hint warning">
+      <strong>Known issue:</strong> on systems where WebGPU is actually used, it can currently
+      produce distorted/garbled audio for this model ("dog growling" is a good description).
+      This is an upstream ONNX Runtime Web WebGPU-backend bug in how it runs Kokoro's vocoder,
+      not something this extension controls. CPU (the default) is not affected and is the
+      recommended, tested path -- only enable GPU to experiment.
+    </p>
     <label class="radio-field">
       <input type="checkbox" id="gpuCheckbox" />
-      <span>Use GPU acceleration (WebGPU) when available</span>
+      <span>Use GPU acceleration (WebGPU) when available -- experimental, may distort audio</span>
     </label>
     <p class="hint" id="gpuDetected">Checking WebGPU availability in this browser…</p>
   </section>
