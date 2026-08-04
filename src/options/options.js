@@ -43,8 +43,18 @@ function save(partial) {
   });
 }
 
+function normalizeServerUrl(raw) {
+  const trimmed = (raw || "").trim();
+  if (!trimmed) return trimmed;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+}
+
 serverUrlInput.addEventListener("change", () => {
-  save({ serverUrl: serverUrlInput.value.trim() });
+  // Self-correct a bare "host:port" (missing http://) so the field
+  // shows what's actually being used, not just what was typed.
+  const normalized = normalizeServerUrl(serverUrlInput.value);
+  serverUrlInput.value = normalized;
+  save({ serverUrl: normalized });
 });
 
 serverTokenInput.addEventListener("change", () => {
@@ -54,10 +64,12 @@ serverTokenInput.addEventListener("change", () => {
 testConnectionBtn.addEventListener("click", async () => {
   // Persist first so the background script's check uses what's on screen,
   // not a stale previously-saved value.
+  const normalizedUrl = normalizeServerUrl(serverUrlInput.value);
+  serverUrlInput.value = normalizedUrl;
   await browser.runtime.sendMessage({
     type: "saveSettings",
     settings: {
-      serverUrl: serverUrlInput.value.trim(),
+      serverUrl: normalizedUrl,
       serverToken: serverTokenInput.value.trim(),
     },
   });

@@ -24,12 +24,30 @@ async function saveSettings(partial) {
 
 // --- companion server client ----------------------------------------------
 
+// A bare "127.0.0.1:8787" (missing the scheme) isn't a valid absolute
+// URL -- fetch() won't reject it upfront, it'll just fail in a
+// confusing way (e.g. a generic "operation was aborted") since it
+// gets resolved against this page's own moz-extension:// origin
+// instead of actually being requested. Defaulting to http:// here
+// means that mistake just works instead of producing a cryptic error.
+function normalizeServerUrl(raw) {
+  const trimmed = (raw || "").trim();
+  if (!trimmed) return trimmed;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+}
+
 async function serverRequest(path, { method = "GET", body } = {}) {
   const settings = await getSettings();
   if (!settings.serverUrl) {
     throw new Error("No companion server URL configured. Set one in Settings.");
   }
-  const url = settings.serverUrl.replace(/\/+$/, "") + path;
+  const base = normalizeServerUrl(settings.serverUrl);
+  let url;
+  try {
+    url = new URL(path, base).href; // path is always absolute ("/health", "/synthesize")
+  } catch {
+    throw new Error(`"${settings.serverUrl}" isn't a valid server URL -- check Settings.`);
+  }
 
   let resp;
   try {
@@ -42,7 +60,7 @@ async function serverRequest(path, { method = "GET", body } = {}) {
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new Error(`Could not reach the companion server at ${settings.serverUrl}. Is it running?`);
+    throw new Error(`Could not reach the companion server at ${base}. Is it running?`);
   }
 
   if (resp.status === 401) {
