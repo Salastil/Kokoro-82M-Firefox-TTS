@@ -10,6 +10,7 @@ const speedValue = document.getElementById("speedValue");
 const chunkCharsInput = document.getElementById("chunkChars");
 const dtypeRadios = document.querySelectorAll('input[name="dtype"]');
 const gpuCheckbox = document.getElementById("gpuCheckbox");
+const gpuDetected = document.getElementById("gpuDetected");
 const clearCacheBtn = document.getElementById("clearCache");
 const cacheStatus = document.getElementById("cacheStatus");
 const savedNote = document.getElementById("savedNote");
@@ -72,6 +73,22 @@ gpuCheckbox.addEventListener("change", () => {
   save({ device: gpuCheckbox.checked ? "webgpu" : "wasm" });
 });
 
+async function refreshGpuDetected() {
+  const resp = await browser.runtime.sendMessage({ type: "getState" });
+  const state = resp && resp.state;
+  if (!state) return;
+  if (state.gpuAvailableInWindow) {
+    gpuDetected.textContent =
+      "Detected: WebGPU is available in this Firefox. Whether a read actually uses it " +
+      "also depends on Firefox exposing WebGPU to background Workers, which lags behind " +
+      "main-thread support -- if it isn't, reads will say so and use CPU automatically.";
+  } else {
+    gpuDetected.textContent =
+      "Detected: WebGPU is not available in this Firefox/profile, so this toggle will " +
+      "have no effect until it is. Check about:config -> dom.webgpu.enabled, or update Firefox.";
+  }
+}
+
 async function refreshCacheStatus() {
   if (!("caches" in window)) {
     cacheStatus.textContent = "Cache storage unavailable.";
@@ -113,3 +130,4 @@ clearCacheBtn.addEventListener("click", async () => {
 
 loadSettings();
 refreshCacheStatus();
+refreshGpuDetected();

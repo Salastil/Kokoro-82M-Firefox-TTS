@@ -12,6 +12,14 @@ let worker = null;
 let jobCounter = 0;
 let activeJobId = null;
 
+// The background page is a normal window/document context (unlike the
+// TTS Worker), so this reflects whether Firefox exposes WebGPU *at
+// all* in this profile/build. If this is true but the worker still
+// falls back to CPU, the gap is specifically "WebGPU not available to
+// Workers in this Firefox version" rather than "WebGPU unsupported
+// here" -- useful for telling those two situations apart in the UI.
+const GPU_AVAILABLE_IN_WINDOW = typeof navigator !== "undefined" && !!navigator.gpu;
+
 const audioEl = new Audio();
 audioEl.autoplay = false;
 
@@ -30,6 +38,8 @@ const state = {
   errorMessage: null,
   device: null, // "wasm" | "webgpu", set once the worker reports which it actually loaded on
   deviceFellBack: false, // true if webgpu was requested but unavailable, so wasm was used instead
+  deviceFallbackReason: null, // "no-navigator-gpu" | "no-adapter" | "adapter-error" | null
+  gpuAvailableInWindow: GPU_AVAILABLE_IN_WINDOW, // static fact about this Firefox profile, not job-scoped
 };
 
 function resetState() {
@@ -43,6 +53,7 @@ function resetState() {
   state.errorMessage = null;
   state.device = null;
   state.deviceFellBack = false;
+  state.deviceFallbackReason = null;
 }
 
 function broadcastState() {
@@ -91,6 +102,7 @@ function onWorkerMessage(event) {
       state.modelLoadProgress = null;
       state.device = msg.device;
       state.deviceFellBack = !!msg.fellBack;
+      state.deviceFallbackReason = msg.reason || null;
       broadcastState();
       break;
     case "audio": {

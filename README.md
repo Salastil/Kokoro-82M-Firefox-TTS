@@ -115,9 +115,25 @@ which paragraph is currently playing, for highlighting.
   recommended balance), `fp32` (~326MB, best quality, slowest on
   CPU). Changing this re-downloads weights on next use.
 - **GPU acceleration (WebGPU)** — off by default (CPU/WASM). Turning
-  it on asks ONNX Runtime Web to use WebGPU instead; if the browser
-  doesn't report WebGPU support at read-time, it transparently uses
-  CPU for that session instead of failing.
+  it on asks ONNX Runtime Web to use WebGPU instead; if it's not
+  actually usable at read-time, it transparently falls back to CPU
+  and says why in the status bar:
+  - *"WebGPU works in this Firefox, but isn't exposed to background
+    Workers yet"* — the most common case as of early 2026: Firefox's
+    WebGPU support has historically landed on the main thread before
+    dedicated Workers (where this extension's synthesis runs), and
+    Linux builds lag Windows. This is a Firefox platform limitation,
+    not something this extension can work around.
+  - *"WebGPU isn't available in this Firefox/profile"* — WebGPU isn't
+    enabled at all here; check `about:config` → `dom.webgpu.enabled`,
+    or update Firefox.
+  - *"No compatible WebGPU adapter found"* — WebGPU is exposed, but
+    `requestAdapter()` couldn't find/use your GPU (driver/blocklist
+    issue).
+
+  The options page's Performance section shows a live "Detected: …"
+  line reporting which of these applies in your browser right now,
+  independent of whether you've actually started a read.
 - **Max characters per synthesis chunk** — how much text is sent to
   the model per call; smaller is choppier but starts playing sooner,
   larger sounds more natural but has more latency per chunk.

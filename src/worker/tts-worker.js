@@ -22,13 +22,27 @@ env.useBrowserCache = true;
 
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
-function resolveDevice(requested) {
-  if (requested === "webgpu") {
-    const hasWebGPU = typeof navigator !== "undefined" && !!navigator.gpu;
-    if (hasWebGPU) return { device: "webgpu", fellBack: false };
-    return { device: "wasm", fellBack: true };
+// Firefox's WebGPU support is inconsistent across contexts/platforms:
+// `navigator.gpu` may simply not exist here (WebGPU disabled, or not
+// yet exposed to dedicated Workers at all in this Firefox version --
+// a known gap, separate from main-thread support), or it may exist
+// but fail to hand back a usable adapter (no compatible GPU/driver).
+// Actually requesting an adapter (not just checking `navigator.gpu`
+// truthiness) distinguishes those cases so the UI can say something
+// more useful than a bare "unavailable".
+async function resolveDevice(requested) {
+  if (requested !== "webgpu") return { device: "wasm", fellBack: false, reason: null };
+
+  if (typeof navigator === "undefined" || !navigator.gpu) {
+    return { device: "wasm", fellBack: true, reason: "no-navigator-gpu" };
   }
-  return { device: "wasm", fellBack: false };
+  try {
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) return { device: "wasm", fellBack: true, reason: "no-adapter" };
+    return { device: "webgpu", fellBack: false, reason: null };
+  } catch {
+    return { device: "wasm", fellBack: true, reason: "adapter-error" };
+  }
 }
 
 let ttsPromise = null;
@@ -92,7 +106,7 @@ let activeJobId = null;
 
 async function runJob(jobId, segments, options) {
   const { voice, speed, dtype, chunkChars, device: requestedDevice } = options;
-  const { device, fellBack } = resolveDevice(requestedDevice);
+  const { device, fellBack, reason } = await resolveDevice(requestedDevice);
   let tts;
   try {
     tts = await loadTTS(dtype, device);
@@ -107,7 +121,7 @@ async function runJob(jobId, segments, options) {
     return;
   }
   if (jobId !== activeJobId) return;
-  postMessage({ type: "ready", jobId, device, requestedDevice, fellBack });
+  postMessage({ type: "ready", jobId, device, requestedDevice, fellBack, reason });
 
   for (let segIdx = 0; segIdx < segments.length; segIdx++) {
     if (jobId !== activeJobId) return;
@@ -175,13 +189,15 @@ self.onmessage = (event) => {
       activeJobId = null;
       break;
     case "warm":
-      loadTTS(msg.dtype || "q8", resolveDevice(msg.device).device).catch((err) => {
-        postMessage({
-          type: "error",
-          jobId: null,
-          message: `Model load failed: ${err?.message || err}`,
+      resolveDevice(msg.device)
+        .then(({ device }) => loadTTS(msg.dtype || "q8", device))
+        .catch((err) => {
+          postMessage({
+            type: "error",
+            jobId: null,
+            message: `Model load failed: ${err?.message || err}`,
+          });
         });
-      });
       break;
     default:
       break;

@@ -27,8 +27,24 @@ function populateVoices(selected) {
   voiceSelect.value = selected;
 }
 
+function gpuFallbackNote(state) {
+  if (!state.deviceFellBack) return "";
+  switch (state.deviceFallbackReason) {
+    case "no-navigator-gpu":
+      return state.gpuAvailableInWindow
+        ? " (WebGPU works in this Firefox, but isn't exposed to background Workers yet — using CPU)"
+        : " (WebGPU isn't available in this Firefox/profile — using CPU)";
+    case "no-adapter":
+      return " (No compatible WebGPU adapter found — using CPU)";
+    case "adapter-error":
+      return " (WebGPU adapter request failed — using CPU)";
+    default:
+      return " (GPU unavailable, using CPU)";
+  }
+}
+
 function statusLabel(state) {
-  const gpuNote = state.deviceFellBack ? " (GPU unavailable, using CPU)" : "";
+  const gpuNote = gpuFallbackNote(state);
   switch (state.status) {
     case "loading-model": {
       const pct = state.modelLoadProgress && state.modelLoadProgress.progress;
