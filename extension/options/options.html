@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Kokoro Reader Settings</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <h1>Kokoro Reader</h1>
+  <p class="lede">
+    Reads articles and selected text aloud using
+    <a href="https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX" target="_blank" rel="noopener">Kokoro-82M</a>,
+    entirely on-device via WebAssembly. All synthesis happens on your CPU in a background
+    worker -- no text or audio is ever sent anywhere. The only network access is a one-time
+    download of the model weights from Hugging Face, which the browser caches locally.
+  </p>
+
+  <section>
+    <h2>Voice &amp; speed</h2>
+    <label class="field">
+      <span>Default voice</span>
+      <select id="voiceSelect"></select>
+    </label>
+    <label class="field">
+      <span>Speed <span id="speedValue">1.0x</span></span>
+      <input id="speedRange" type="range" min="0.5" max="2" step="0.1" value="1" />
+    </label>
+  </section>
+
+  <section>
+    <h2>Model quality</h2>
+    <p class="hint">
+      Changing this downloads a different set of model weights the next time you read
+      something. Larger = better quality &amp; slower on CPU.
+    </p>
+    <label class="radio-field">
+      <input type="radio" name="dtype" value="q4" />
+      <span><strong>Small (q4)</strong> — ~40MB, fastest, lower quality</span>
+    </label>
+    <label class="radio-field">
+      <input type="radio" name="dtype" value="q8" />
+      <span><strong>Balanced (q8)</strong> — ~85MB, recommended</span>
+    </label>
+    <label class="radio-field">
+      <input type="radio" name="dtype" value="fp32" />
+      <span><strong>Full precision (fp32)</strong> — ~326MB, best quality, slowest</span>
+    </label>
+  </section>
+
+  <section>
+    <h2>Advanced</h2>
+    <label class="field">
+      <span>Max characters per synthesis chunk</span>
+      <input id="chunkChars" type="number" min="80" max="600" step="20" />
+    </label>
+  </section>
+
+  <section>
+    <h2>Storage</h2>
+    <p class="hint" id="cacheStatus">Checking cached model data…</p>
+    <button id="clearCache" class="btn btn-secondary">Clear cached model data</button>
+  </section>
+
+  <div id="savedNote" class="saved-note" hidden>Saved</div>
+
+  <script src="../common/constants.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

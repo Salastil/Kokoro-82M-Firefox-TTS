@@ -1,0 +1,106 @@
+body {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #1c1730;
+  background: #fbfaff;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #201a33;
+    color: #f2eefc;
+  }
+  a {
+    color: #b7a6ff;
+  }
+}
+
+h1 {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.lede {
+  font-size: 13px;
+  opacity: 0.8;
+  line-height: 1.5;
+}
+
+section {
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(91, 75, 138, 0.2);
+}
+
+h2 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+
+.hint {
+  font-size: 12px;
+  opacity: 0.75;
+  margin: 0 0 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.field select,
+.field input[type="number"] {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(91, 75, 138, 0.4);
+  background: transparent;
+  color: inherit;
+  max-width: 260px;
+}
+
+.radio-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.radio-field input {
+  margin-top: 3px;
+}
+
+.btn {
+  appearance: none;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn-secondary {
+  background: rgba(91, 75, 138, 0.15);
+  color: inherit;
+}
+
+.btn-secondary:hover {
+  background: rgba(91, 75, 138, 0.25);
+}
+
+.saved-note {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: #5b4b8a;
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+}

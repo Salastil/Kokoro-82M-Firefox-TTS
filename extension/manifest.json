@@ -1,0 +1,50 @@
+{
+  "manifest_version": 2,
+  "name": "Kokoro Reader — Local TTS",
+  "short_name": "Kokoro Reader",
+  "version": "0.1.0",
+  "description": "Reads articles or selected text aloud using Kokoro-82M. Runs fully on-device via WebAssembly (CPU only) -- no server, no cloud, no text ever leaves your computer except the one-time model download from Hugging Face.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "kokoro-reader@salastil.dev",
+      "strict_min_version": "115.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
+  "icons": {
+    "32": "icons/icon.svg",
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg",
+    "128": "icons/icon.svg"
+  },
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "activeTab",
+    "https://huggingface.co/*",
+    "https://*.huggingface.co/*",
+    "https://*.hf.co/*"
+  ],
+  "background": {
+    "scripts": [
+      "common/constants.js",
+      "background/background.js"
+    ],
+    "persistent": true
+  },
+  "browser_action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "32": "icons/icon.svg"
+    },
+    "default_title": "Kokoro Reader"
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true,
+    "browser_style": true
+  },
+  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co blob:; worker-src 'self'; style-src 'self' 'unsafe-inline';"
+}

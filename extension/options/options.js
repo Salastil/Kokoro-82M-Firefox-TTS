@@ -1,0 +1,109 @@
+"use strict";
+
+/* global browser, KOKORO_VOICES */
+
+const CACHE_NAMES = ["transformers-cache", "kokoro-voices"];
+
+const voiceSelect = document.getElementById("voiceSelect");
+const speedRange = document.getElementById("speedRange");
+const speedValue = document.getElementById("speedValue");
+const chunkCharsInput = document.getElementById("chunkChars");
+const dtypeRadios = document.querySelectorAll('input[name="dtype"]');
+const clearCacheBtn = document.getElementById("clearCache");
+const cacheStatus = document.getElementById("cacheStatus");
+const savedNote = document.getElementById("savedNote");
+
+function populateVoices(selected) {
+  voiceSelect.innerHTML = "";
+  for (const v of KOKORO_VOICES) {
+    const opt = document.createElement("option");
+    opt.value = v.id;
+    opt.textContent = v.label;
+    voiceSelect.appendChild(opt);
+  }
+  voiceSelect.value = selected;
+}
+
+function currentDtype() {
+  for (const r of dtypeRadios) if (r.checked) return r.value;
+  return "q8";
+}
+
+async function loadSettings() {
+  const settings = await browser.runtime.sendMessage({ type: "getSettings" });
+  populateVoices(settings.voice);
+  speedRange.value = String(settings.speed);
+  speedValue.textContent = `${Number(settings.speed).toFixed(1)}x`;
+  chunkCharsInput.value = String(settings.chunkChars);
+  for (const r of dtypeRadios) r.checked = r.value === settings.dtype;
+}
+
+let saveTimer = null;
+function save(partial) {
+  browser.runtime.sendMessage({ type: "saveSettings", settings: partial }).then(() => {
+    savedNote.hidden = false;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      savedNote.hidden = true;
+    }, 1200);
+  });
+}
+
+voiceSelect.addEventListener("change", () => save({ voice: voiceSelect.value }));
+
+speedRange.addEventListener("input", () => {
+  speedValue.textContent = `${Number(speedRange.value).toFixed(1)}x`;
+});
+speedRange.addEventListener("change", () => save({ speed: Number(speedRange.value) }));
+
+chunkCharsInput.addEventListener("change", () => {
+  const val = Math.max(80, Math.min(600, Number(chunkCharsInput.value) || 300));
+  chunkCharsInput.value = String(val);
+  save({ chunkChars: val });
+});
+
+for (const r of dtypeRadios) {
+  r.addEventListener("change", () => save({ dtype: currentDtype() }));
+}
+
+async function refreshCacheStatus() {
+  if (!("caches" in window)) {
+    cacheStatus.textContent = "Cache storage unavailable.";
+    return;
+  }
+  let totalEntries = 0;
+  let found = false;
+  for (const name of CACHE_NAMES) {
+    try {
+      const has = await caches.has(name);
+      if (!has) continue;
+      found = true;
+      const cache = await caches.open(name);
+      const keys = await cache.keys();
+      totalEntries += keys.length;
+    } catch {
+      // ignore
+    }
+  }
+  cacheStatus.textContent = found
+    ? `Model data is cached locally (${totalEntries} file${totalEntries === 1 ? "" : "s"}).`
+    : "No model data cached yet -- it will download on first use.";
+}
+
+clearCacheBtn.addEventListener("click", async () => {
+  clearCacheBtn.disabled = true;
+  clearCacheBtn.textContent = "Clearing…";
+  for (const name of CACHE_NAMES) {
+    try {
+      await caches.delete(name);
+    } catch {
+      // ignore
+    }
+  }
+  clearCacheBtn.disabled = false;
+  clearCacheBtn.textContent = "Clear cached model data";
+  await refreshCacheStatus();
+});
+
+loadSettings();
+refreshCacheStatus();

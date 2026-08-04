@@ -1,0 +1,39 @@
+{
+  "name": "kokoro-82m-firefox-tts",
+  "version": "0.1.0",
+  "description": "Firefox extension that reads articles or selected text aloud using Kokoro-82M TTS, running fully in-browser on CPU (no server, no cloud).",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "lint:ext": "web-ext lint --source-dir=extension",
+    "run:ext": "web-ext run --source-dir=extension"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/salastil/kokoro-82m-firefox-tts.git"
+  },
+  "keywords": [
+    "firefox",
+    "webextension",
+    "tts",
+    "kokoro",
+    "onnx",
+    "text-to-speech"
+  ],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/salastil/kokoro-82m-firefox-tts/issues"
+  },
+  "homepage": "https://github.com/salastil/kokoro-82m-firefox-tts#readme",
+  "devDependencies": {
+    "esbuild": "^0.28.1",
+    "web-ext": "^8.3.0"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "kokoro-js": "^1.2.1"
+  }
+}

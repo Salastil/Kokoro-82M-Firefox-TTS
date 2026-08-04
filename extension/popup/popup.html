@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Kokoro Reader</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="pop-header">
+    <span class="pop-title">Kokoro Reader</span>
+    <button id="openOptions" class="pop-icon-btn" title="Settings">⚙</button>
+  </header>
+
+  <div id="status" class="pop-status">Idle</div>
+  <div id="errorBanner" class="pop-error" hidden></div>
+
+  <div class="pop-actions">
+    <button id="readSelectionBtn" class="pop-btn">Read Selection</button>
+    <button id="readPageBtn" class="pop-btn">Read Article</button>
+  </div>
+
+  <div id="playbackControls" class="pop-playback" hidden>
+    <button id="toggleBtn" class="pop-btn pop-btn-secondary">Pause</button>
+    <button id="stopBtn" class="pop-btn pop-btn-secondary">Stop</button>
+  </div>
+
+  <div class="pop-settings">
+    <label class="pop-field">
+      <span>Voice</span>
+      <select id="voiceSelect"></select>
+    </label>
+    <label class="pop-field">
+      <span>Speed <span id="speedValue">1.0x</span></span>
+      <input id="speedRange" type="range" min="0.5" max="2" step="0.1" value="1" />
+    </label>
+  </div>
+
+  <script src="../common/constants.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,151 @@
+/* Injected as a page-level stylesheet, so everything is namespaced
+   under #kokoro-reader-root / kokoro-* class names and set with
+   fairly high specificity to resist the host page's own CSS. */
+
+#kokoro-reader-root,
+#kokoro-reader-root * {
+  box-sizing: border-box;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+}
+
+#kokoro-reader-root .kokoro-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  background: rgba(20, 16, 32, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+}
+
+#kokoro-reader-root .kokoro-panel {
+  background: #fbfaff;
+  color: #1c1730;
+  width: min(720px, 100%);
+  max-height: 100%;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@media (prefers-color-scheme: dark) {
+  #kokoro-reader-root .kokoro-panel {
+    background: #201a33;
+    color: #f2eefc;
+  }
+}
+
+#kokoro-reader-root .kokoro-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(91, 75, 138, 0.25);
+  flex-shrink: 0;
+}
+
+#kokoro-reader-root .kokoro-title {
+  font-weight: 600;
+  font-size: 15px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#kokoro-reader-root .kokoro-status {
+  font-size: 12px;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+#kokoro-reader-root .kokoro-controls {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+#kokoro-reader-root .kokoro-btn {
+  appearance: none;
+  border: none;
+  background: #5b4b8a;
+  color: #fff;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+#kokoro-reader-root .kokoro-btn:hover {
+  background: #6f5ba8;
+}
+
+#kokoro-reader-root .kokoro-btn-close {
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+}
+
+#kokoro-reader-root .kokoro-btn-close:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.2);
+}
+
+#kokoro-reader-root .kokoro-article {
+  overflow-y: auto;
+  padding: 20px 24px 28px;
+  font-size: 17px;
+}
+
+#kokoro-reader-root .kokoro-segment {
+  margin: 0 0 1em;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin-left: -4px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+#kokoro-reader-root .kokoro-segment:hover {
+  background: rgba(91, 75, 138, 0.08);
+}
+
+#kokoro-reader-root .kokoro-segment.kokoro-current {
+  background: rgba(91, 75, 138, 0.18);
+}
+
+#kokoro-reader-root .kokoro-mini {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 2147483000;
+  background: #201a33;
+  color: #f2eefc;
+  border-radius: 999px;
+  padding: 8px 10px 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+}
+
+#kokoro-reader-root .kokoro-mini-status {
+  white-space: nowrap;
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#kokoro-reader-root .kokoro-mini-controls {
+  gap: 6px;
+}

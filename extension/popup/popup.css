@@ -1,0 +1,114 @@
+body {
+  width: 260px;
+  margin: 0;
+  padding: 12px;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #1c1730;
+  background: #fbfaff;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #201a33;
+    color: #f2eefc;
+  }
+}
+
+.pop-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.pop-title {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.pop-icon-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 16px;
+  opacity: 0.7;
+}
+
+.pop-icon-btn:hover {
+  opacity: 1;
+}
+
+.pop-status {
+  font-size: 12px;
+  opacity: 0.75;
+  margin-bottom: 10px;
+  min-height: 14px;
+}
+
+.pop-error {
+  font-size: 12px;
+  color: #b3261e;
+  background: rgba(179, 38, 30, 0.12);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 10px;
+}
+
+.pop-actions,
+.pop-playback {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.pop-btn {
+  flex: 1;
+  appearance: none;
+  border: none;
+  border-radius: 8px;
+  background: #5b4b8a;
+  color: #fff;
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.pop-btn:hover {
+  background: #6f5ba8;
+}
+
+.pop-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pop-btn-secondary {
+  background: rgba(91, 75, 138, 0.15);
+  color: inherit;
+}
+
+.pop-btn-secondary:hover {
+  background: rgba(91, 75, 138, 0.25);
+}
+
+.pop-settings {
+  border-top: 1px solid rgba(91, 75, 138, 0.2);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pop-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.pop-field select,
+.pop-field input {
+  width: 100%;
+}
