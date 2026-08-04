@@ -11,6 +11,7 @@ const chunkCharsInput = document.getElementById("chunkChars");
 const dtypeRadios = document.querySelectorAll('input[name="dtype"]');
 const gpuCheckbox = document.getElementById("gpuCheckbox");
 const gpuDetected = document.getElementById("gpuDetected");
+const threadingDetected = document.getElementById("threadingDetected");
 const clearCacheBtn = document.getElementById("clearCache");
 const cacheStatus = document.getElementById("cacheStatus");
 const savedNote = document.getElementById("savedNote");
@@ -73,10 +74,11 @@ gpuCheckbox.addEventListener("change", () => {
   save({ device: gpuCheckbox.checked ? "webgpu" : "wasm" });
 });
 
-async function refreshGpuDetected() {
+async function refreshDiagnostics() {
   const resp = await browser.runtime.sendMessage({ type: "getState" });
   const state = resp && resp.state;
   if (!state) return;
+
   if (state.gpuAvailableInWindow) {
     gpuDetected.textContent =
       "Detected: WebGPU is available in this Firefox. Whether a read actually uses it " +
@@ -86,6 +88,21 @@ async function refreshGpuDetected() {
     gpuDetected.textContent =
       "Detected: WebGPU is not available in this Firefox/profile, so this toggle will " +
       "have no effect until it is. Check about:config -> dom.webgpu.enabled, or update Firefox.";
+  }
+
+  if (state.wasmThreads) {
+    // A read has happened at least once, so we know what the Worker
+    // actually got, not just what the background page can see.
+    threadingDetected.textContent =
+      state.wasmThreads > 1
+        ? `Detected: last read used ${state.wasmThreads} CPU threads.`
+        : `Detected: last read used only 1 CPU thread (background page itself is ` +
+          `${state.windowCrossOriginIsolated ? "" : "not "}cross-origin isolated` +
+          `${state.windowCrossOriginIsolated ? ", but the Worker isn't -- a Firefox Worker-isolation gap, not something this extension can force" : ""}).`;
+  } else {
+    threadingDetected.textContent = state.windowCrossOriginIsolated
+      ? "Detected: this background page is cross-origin isolated. Read something once to see what the synthesis Worker actually gets (it doesn't always inherit this)."
+      : "Detected: this background page is not cross-origin isolated, so the synthesis Worker almost certainly won't be either -- expect single-threaded CPU synthesis.";
   }
 }
 
@@ -130,4 +147,4 @@ clearCacheBtn.addEventListener("click", async () => {
 
 loadSettings();
 refreshCacheStatus();
-refreshGpuDetected();
+refreshDiagnostics();

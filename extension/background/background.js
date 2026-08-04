@@ -20,6 +20,17 @@ let activeJobId = null;
 // here" -- useful for telling those two situations apart in the UI.
 const GPU_AVAILABLE_IN_WINDOW = typeof navigator !== "undefined" && !!navigator.gpu;
 
+// Same idea for cross-origin isolation (SharedArrayBuffer / WASM
+// threading): checked here in the background *page* (a window
+// context) so it can be compared against what the Worker reports.
+// Spawning a Worker from an isolated page doesn't guarantee the
+// Worker itself is isolated in every engine, so if this is true but
+// the worker's crossOriginIsolated/wasmThreads come back false/1,
+// that's specifically a Worker-inheritance gap, not a browser-wide
+// "isolation unavailable" situation.
+const WINDOW_CROSS_ORIGIN_ISOLATED =
+  typeof self !== "undefined" && !!self.crossOriginIsolated && typeof SharedArrayBuffer !== "undefined";
+
 const audioEl = new Audio();
 audioEl.autoplay = false;
 
@@ -41,7 +52,8 @@ const state = {
   deviceFallbackReason: null, // "no-navigator-gpu" | "no-adapter" | "adapter-error" | null
   gpuAvailableInWindow: GPU_AVAILABLE_IN_WINDOW, // static fact about this Firefox profile, not job-scoped
   wasmThreads: null, // actual ONNX Runtime Web WASM thread count in use (device === "wasm")
-  crossOriginIsolated: null, // whether the worker context could multithread WASM at all
+  crossOriginIsolated: null, // whether the *worker* context could multithread WASM at all
+  windowCrossOriginIsolated: WINDOW_CROSS_ORIGIN_ISOLATED, // same fact, but for the background page itself
 };
 
 function resetState() {

@@ -66,6 +66,20 @@
       <span>Use GPU acceleration (WebGPU) when available -- experimental, may distort audio</span>
     </label>
     <p class="hint" id="gpuDetected">Checking WebGPU availability in this browser…</p>
+
+    <h3>CPU threading</h3>
+    <p class="hint">
+      ONNX Runtime Web only multithreads WASM synthesis when its context is cross-origin
+      isolated; otherwise it silently runs on a single core, which is a common cause of
+      audible gaps between chunks while reading (synthesis falling behind real-time
+      playback) even on fast, many-core CPUs.
+    </p>
+    <p class="hint" id="threadingDetected">Checking threading status…</p>
+    <p class="hint">
+      If you're stuck on 1 thread: try <strong>Small (q4)</strong> under Model quality above
+      -- it's noticeably faster per chunk on a single core and may close the gap on its own
+      while a real fix for isolation is investigated.
+    </p>
   </section>
 
   <section>
