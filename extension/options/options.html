@@ -10,10 +10,29 @@
   <p class="lede">
     Reads articles and selected text aloud using
     <a href="https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX" target="_blank" rel="noopener">Kokoro-82M</a>,
-    entirely on-device via WebAssembly. All synthesis happens on your CPU in a background
-    worker -- no text or audio is ever sent anywhere. The only network access is a one-time
-    download of the model weights from Hugging Face, which the browser caches locally.
+    synthesized by a small companion server running on your own machine (see
+    <a href="https://github.com/salastil/kokoro-82m-firefox-tts/tree/main/server" target="_blank" rel="noopener">server/</a>
+    in the repo for setup) -- not a cloud API. No text or audio leaves your network.
   </p>
+
+  <section>
+    <h2>Companion server</h2>
+    <p class="hint">
+      Paste the URL and auth token the server printed when it first started (also in its
+      config file, and in <code>journalctl --user -u kokoro-reader-server</code> if you
+      installed it as a systemd service).
+    </p>
+    <label class="field">
+      <span>Server URL</span>
+      <input id="serverUrl" type="text" placeholder="http://127.0.0.1:8787" />
+    </label>
+    <label class="field">
+      <span>Auth token</span>
+      <input id="serverToken" type="password" placeholder="paste the token here" />
+    </label>
+    <button id="testConnection" class="btn btn-secondary">Test connection</button>
+    <p class="hint" id="connectionStatus"></p>
+  </section>
 
   <section>
     <h2>Voice &amp; speed</h2>
@@ -28,77 +47,21 @@
   </section>
 
   <section>
-    <h2>Model quality</h2>
-    <p class="hint">
-      Changing this downloads a different set of model weights the next time you read
-      something. Larger = better quality &amp; slower on CPU.
-    </p>
-    <label class="radio-field">
-      <input type="radio" name="dtype" value="q4" />
-      <span><strong>Small (q4)</strong> — ~40MB, fastest, lower quality</span>
-    </label>
-    <label class="radio-field">
-      <input type="radio" name="dtype" value="q8" />
-      <span><strong>Balanced (q8)</strong> — ~85MB, recommended</span>
-    </label>
-    <label class="radio-field">
-      <input type="radio" name="dtype" value="fp32" />
-      <span><strong>Full precision (fp32)</strong> — ~326MB, best quality, slowest</span>
-    </label>
-  </section>
-
-  <section>
-    <h2>Performance</h2>
-    <p class="hint">
-      Synthesis runs on your CPU by default, which is what this extension is designed and
-      tested for. GPU acceleration (WebGPU) is experimental and opt-in -- if your browser or
-      system doesn't support it, Kokoro Reader automatically falls back to CPU.
-    </p>
-    <p class="hint warning">
-      <strong>Known issue:</strong> on systems where WebGPU is actually used, it can currently
-      produce distorted/garbled audio for this model ("dog growling" is a good description).
-      This is an upstream ONNX Runtime Web WebGPU-backend bug in how it runs Kokoro's vocoder,
-      not something this extension controls. CPU (the default) is not affected and is the
-      recommended, tested path -- only enable GPU to experiment.
-    </p>
-    <label class="radio-field">
-      <input type="checkbox" id="gpuCheckbox" />
-      <span>Use GPU acceleration (WebGPU) when available -- experimental, may distort audio</span>
-    </label>
-    <p class="hint" id="gpuDetected">Checking WebGPU availability in this browser…</p>
-
-    <h3>CPU threading</h3>
-    <p class="hint">
-      ONNX Runtime Web only multithreads WASM synthesis when its context is cross-origin
-      isolated; otherwise it silently runs on a single core, which is a common cause of
-      audible gaps between chunks while reading (synthesis falling behind real-time
-      playback) even on fast, many-core CPUs.
-    </p>
-    <p class="hint" id="threadingDetected">Checking threading status…</p>
-    <p class="hint">
-      If you're stuck on 1 thread: try <strong>Small (q4)</strong> under Model quality above
-      -- it's noticeably faster per chunk on a single core and may close the gap on its own
-      while a real fix for isolation is investigated.
-    </p>
-  </section>
-
-  <section>
     <h2>Advanced</h2>
     <label class="field">
-      <span>Max characters per synthesis chunk</span>
-      <input id="chunkChars" type="number" min="80" max="600" step="20" />
+      <span>Max characters per synthesis request</span>
+      <input id="chunkChars" type="number" min="80" max="800" step="20" />
     </label>
-  </section>
-
-  <section>
-    <h2>Storage</h2>
-    <p class="hint" id="cacheStatus">Checking cached model data…</p>
-    <button id="clearCache" class="btn btn-secondary">Clear cached model data</button>
+    <p class="hint">
+      Text is split into sentence-sized pieces and sent to the server one at a time so
+      playback can start before the whole thing is synthesized. Smaller values start
+      playing sooner per piece; larger values usually sound more natural and mean fewer
+      requests.
+    </p>
   </section>
 
   <div id="savedNote" class="saved-note" hidden>Saved</div>
 
-  <script src="../common/constants.js"></script>
-  <script src="options.js"></script>
+  <script src="options.bundle.js"></script>
 </body>
 </html>

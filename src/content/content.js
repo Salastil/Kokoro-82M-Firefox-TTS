@@ -1,10 +1,11 @@
 // Content script: article extraction (via Readability), selection
-// text lookup, and the on-page reader overlay / mini-player UI. Talks
-// to the background page only -- never touches the TTS model or
-// audio directly.
+// text lookup, the on-page reader overlay / mini-player UI, AND
+// actual audio playback. Playback lives here (not in the background
+// service worker) because this is a real page document in both
+// Firefox and Chromium -- unlike an MV3 service worker, which has no
+// DOM at all, this never needs an offscreen-document workaround.
+import browser from "webextension-polyfill";
 import { Readability } from "@mozilla/readability";
-
-/* global browser */
 
 const HIGHLIGHT_CLASS = "kokoro-current";
 
@@ -13,7 +14,19 @@ let overlayEls = null; // { backdrop, statusEl, toggleBtn, article, segmentEls: 
 let miniPlayerEls = null; // { bar, statusEl, toggleBtn, expandBtn }
 let currentMode = null; // "page" | "selection" | null
 let minimized = false;
-let lastStatus = "idle";
+
+// --- playback state ---------------------------------------------------
+let currentJobId = null;
+let segmentCount = 0;
+let currentSegmentIndex = 0;
+let currentSegmentId = null;
+let localStatus = "idle"; // idle | loading | synthesizing | playing | paused | error
+let errorMessage = null;
+
+const queue = []; // { url, segmentId, segmentIndex, isLastChunk }
+let playingItem = null;
+const audioEl = new Audio();
+audioEl.autoplay = false;
 
 function ensureRoot() {
   if (rootEl && document.documentElement.contains(rootEl)) return rootEl;
@@ -63,6 +76,95 @@ function extractArticle() {
   return { title: document.title, segments };
 }
 
+// --- playback engine -----------------------------------------------------
+
+function reportEvent(kind, extra = {}) {
+  browser.runtime.sendMessage({ type: "contentEvent", jobId: currentJobId, kind, ...extra }).catch(() => {});
+}
+
+function maybeStartPlayback() {
+  if (playingItem || queue.length === 0) return;
+  if (localStatus === "paused") return;
+  playingItem = queue.shift();
+  currentSegmentIndex = playingItem.segmentIndex;
+  if (currentSegmentId !== playingItem.segmentId) {
+    currentSegmentId = playingItem.segmentId;
+    reportEvent("segmentStarted", { segmentId: playingItem.segmentId, segmentIndex: playingItem.segmentIndex });
+  }
+  audioEl.src = playingItem.url;
+  localStatus = "playing";
+  updateStatusUI();
+  audioEl.play().catch((err) => {
+    failPlayback(`Playback failed: ${err.message}`);
+  });
+}
+
+audioEl.addEventListener("ended", () => {
+  const wasLast = playingItem && playingItem.isLastChunk;
+  if (playingItem) {
+    URL.revokeObjectURL(playingItem.url);
+    playingItem = null;
+  }
+  if (wasLast) {
+    reportEvent("allPlaybackDone");
+    teardownPlayback();
+    closeAll();
+    return;
+  }
+  if (queue.length > 0) {
+    maybeStartPlayback();
+  } else {
+    localStatus = "synthesizing"; // caught up with the server, waiting for more
+    updateStatusUI();
+    reportEvent("buffering");
+  }
+});
+
+function failPlayback(message) {
+  errorMessage = message;
+  localStatus = "error";
+  updateStatusUI();
+  reportEvent("playbackError", { message });
+  teardownPlayback();
+}
+
+function clearQueue() {
+  for (const item of queue) URL.revokeObjectURL(item.url);
+  queue.length = 0;
+  if (playingItem) {
+    URL.revokeObjectURL(playingItem.url);
+    playingItem = null;
+  }
+}
+
+function teardownPlayback() {
+  audioEl.pause();
+  audioEl.removeAttribute("src");
+  clearQueue();
+  currentJobId = null;
+  currentSegmentId = null;
+}
+
+function sendToggle() {
+  if (localStatus === "paused") {
+    localStatus = "playing";
+    updateStatusUI();
+    audioEl.play().catch(() => {});
+    reportEvent("userResumed");
+  } else {
+    localStatus = "paused";
+    updateStatusUI();
+    audioEl.pause();
+    reportEvent("userPaused");
+  }
+}
+
+function sendStop() {
+  reportEvent("userStopped");
+  teardownPlayback();
+  closeAll();
+}
+
 // --- shared control bar builder ----------------------------------------
 
 function buildControls({ onToggle, onMinimize, onStop, onClose }) {
@@ -107,18 +209,6 @@ function buildControls({ onToggle, onMinimize, onStop, onClose }) {
   }
 
   return { controls, toggleBtn, minimizeBtn, stopBtn };
-}
-
-function sendToggle() {
-  if (lastStatus === "paused") {
-    browser.runtime.sendMessage({ type: "resumePlayback" });
-  } else {
-    browser.runtime.sendMessage({ type: "pausePlayback" });
-  }
-}
-
-function sendStop() {
-  browser.runtime.sendMessage({ type: "stopPlayback" });
 }
 
 // --- overlay (article reading mode) -------------------------------------
@@ -259,74 +349,43 @@ function closeAll() {
   minimized = false;
 }
 
-function gpuFallbackNote(state) {
-  if (!state.deviceFellBack) return "";
-  switch (state.deviceFallbackReason) {
-    case "no-navigator-gpu":
-      return state.gpuAvailableInWindow
-        ? " (WebGPU works in this Firefox, but isn't exposed to background Workers yet — using CPU)"
-        : " (WebGPU isn't available in this Firefox/profile — using CPU)";
-    case "no-adapter":
-      return " (No compatible WebGPU adapter found — using CPU)";
-    case "adapter-error":
-      return " (WebGPU adapter request failed — using CPU)";
-    default:
-      return " (GPU unavailable, using CPU)";
-  }
-}
+// --- status UI -------------------------------------------------------------
 
-function threadNote(state) {
-  if (state.device !== "wasm" || !state.wasmThreads) return "";
-  return state.wasmThreads === 1
-    ? " · 1 CPU thread (slow, see Settings > Performance)"
-    : ` · ${state.wasmThreads} CPU threads`;
-}
-
-function statusLabel(state) {
-  const gpuNote = gpuFallbackNote(state);
-  const threadsNote = threadNote(state);
-  switch (state.status) {
-    case "loading-model": {
-      const pct = state.modelLoadProgress && state.modelLoadProgress.progress;
-      return typeof pct === "number"
-        ? `Loading Kokoro model… ${Math.round(pct)}%`
-        : "Loading Kokoro model…";
-    }
+function statusLabel() {
+  switch (localStatus) {
+    case "loading":
+      return "Connecting to server…";
     case "synthesizing":
-      return `Synthesizing…${gpuNote}${threadsNote}`;
+      return "Synthesizing…";
     case "playing":
-      return (state.progress.segmentCount > 1
-        ? `Reading ${state.progress.segmentIndex + 1} / ${state.progress.segmentCount}`
-        : "Reading…") + gpuNote + threadsNote;
+      return segmentCount > 1 ? `Reading ${currentSegmentIndex + 1} / ${segmentCount}` : "Reading…";
     case "paused":
       return "Paused";
     case "error":
-      return state.errorMessage || "Error";
+      return errorMessage || "Error";
     default:
       return "";
   }
 }
 
-function updateUI(state) {
-  lastStatus = state.status;
-
-  if (state.status === "idle") {
+function updateStatusUI() {
+  if (localStatus === "idle") {
     closeAll();
     return;
   }
 
-  const label = statusLabel(state);
-  const toggleGlyph = state.status === "paused" ? "▶" : "❚❚";
+  const label = statusLabel();
+  const toggleGlyph = localStatus === "paused" ? "▶" : "❚❚";
 
   if (overlayEls) {
     overlayEls.statusEl.textContent = label;
     overlayEls.toggleBtn.textContent = toggleGlyph;
-    overlayEls.toggleBtn.title = state.status === "paused" ? "Resume" : "Pause";
-    if (state.currentSegmentId) {
+    overlayEls.toggleBtn.title = localStatus === "paused" ? "Resume" : "Pause";
+    if (currentSegmentId) {
       for (const el of overlayEls.segmentEls.values()) {
         el.classList.remove(HIGHLIGHT_CLASS);
       }
-      const current = overlayEls.segmentEls.get(state.currentSegmentId);
+      const current = overlayEls.segmentEls.get(currentSegmentId);
       if (current) {
         current.classList.add(HIGHLIGHT_CLASS);
         if (!minimized) current.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -337,7 +396,7 @@ function updateUI(state) {
   if (miniPlayerEls) {
     miniPlayerEls.statusEl.textContent = label || "Kokoro Reader";
     miniPlayerEls.toggleBtn.textContent = toggleGlyph;
-    miniPlayerEls.toggleBtn.title = state.status === "paused" ? "Resume" : "Pause";
+    miniPlayerEls.toggleBtn.title = localStatus === "paused" ? "Resume" : "Pause";
   }
 }
 
@@ -347,22 +406,64 @@ browser.runtime.onMessage.addListener((msg) => {
   switch (msg.type) {
     case "ping":
       return Promise.resolve(true);
+
     case "getSelectionText":
       return Promise.resolve({ text: String(window.getSelection()) });
+
     case "extractArticle":
       return Promise.resolve(extractArticle());
-    case "showOverlay":
-      showOverlay(msg.title, msg.segments);
+
+    case "startReading":
+      currentJobId = msg.jobId;
+      segmentCount = msg.segments.length;
+      currentSegmentIndex = 0;
+      currentSegmentId = null;
+      errorMessage = null;
+      clearQueue();
+      localStatus = "loading";
+      if (msg.mode === "page") {
+        showOverlay(msg.title, msg.segments);
+      } else {
+        showMiniPlayer();
+      }
+      updateStatusUI();
       return undefined;
-    case "showMiniPlayer":
-      showMiniPlayer();
+
+    case "audioChunk": {
+      if (msg.jobId !== currentJobId) return undefined; // stale, ignore
+      const url = URL.createObjectURL(new Blob([msg.buffer], { type: "audio/wav" }));
+      queue.push({
+        url,
+        segmentId: msg.segmentId,
+        segmentIndex: msg.segmentIndex,
+        isLastChunk: msg.isLastChunk,
+      });
+      maybeStartPlayback();
       return undefined;
-    case "closeOverlay":
+    }
+
+    case "stopReading":
+      if (msg.jobId != null && msg.jobId !== currentJobId) return undefined; // stale, ignore
+      teardownPlayback();
       closeAll();
       return undefined;
-    case "state":
-      updateUI(msg.state);
+
+    case "pauseReading":
+      localStatus = "paused";
+      updateStatusUI();
+      audioEl.pause();
       return undefined;
+
+    case "resumeReading":
+      if (audioEl.src) {
+        localStatus = "playing";
+        updateStatusUI();
+        audioEl.play().catch(() => {});
+      } else {
+        maybeStartPlayback();
+      }
+      return undefined;
+
     default:
       return undefined;
   }

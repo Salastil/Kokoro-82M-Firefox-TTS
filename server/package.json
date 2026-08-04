@@ -1,0 +1,19 @@
+{
+  "name": "kokoro-reader-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Companion TTS server for Kokoro Reader. Synthesizes speech natively with Kokoro-82M (CUDA if available, CPU otherwise) so the browser extension doesn't run inference in-browser.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "kokoro-js": "^1.2.1"
+  }
+}

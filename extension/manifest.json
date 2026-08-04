@@ -1,50 +1,45 @@
 {
-  "manifest_version": 2,
-  "name": "Kokoro Reader — Local TTS",
+  "manifest_version": 3,
+  "name": "Kokoro Reader",
   "short_name": "Kokoro Reader",
-  "version": "0.1.0",
-  "description": "Reads articles or selected text aloud using Kokoro-82M. Runs fully on-device via WebAssembly (CPU only) -- no server, no cloud, no text ever leaves your computer except the one-time model download from Hugging Face.",
+  "version": "0.2.0",
+  "description": "Reads articles or selected text aloud using Kokoro-82M, synthesized by a companion server on your own machine (CPU or GPU) -- no cloud TTS API, no text sent anywhere outside your network.",
   "browser_specific_settings": {
     "gecko": {
       "id": "kokoro-reader@salastil.dev",
-      "strict_min_version": "115.0",
+      "strict_min_version": "121.0",
       "data_collection_permissions": {
         "required": ["none"]
       }
     }
   },
   "icons": {
-    "32": "icons/icon.svg",
-    "48": "icons/icon.svg",
-    "96": "icons/icon.svg",
-    "128": "icons/icon.svg"
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png",
+    "128": "icons/icon-128.png"
   },
-  "permissions": [
-    "contextMenus",
-    "storage",
-    "activeTab",
-    "https://huggingface.co/*",
-    "https://*.huggingface.co/*",
-    "https://*.hf.co/*"
-  ],
+  "permissions": ["contextMenus", "storage", "activeTab", "scripting"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
   "background": {
-    "scripts": [
-      "common/constants.js",
-      "background/background.js"
-    ],
-    "persistent": true
+    "service_worker": "background/background.bundle.js",
+    "scripts": ["background/background.bundle.js"],
+    "type": "module"
   },
-  "browser_action": {
+  "action": {
     "default_popup": "popup/popup.html",
     "default_icon": {
-      "32": "icons/icon.svg"
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
     },
     "default_title": "Kokoro Reader"
   },
   "options_ui": {
     "page": "options/options.html",
-    "open_in_tab": true,
-    "browser_style": true
+    "open_in_tab": true
   },
-  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co blob:; worker-src 'self'; style-src 'self' 'unsafe-inline';"
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:*; style-src 'self' 'unsafe-inline';"
+  }
 }

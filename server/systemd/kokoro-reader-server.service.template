@@ -1,0 +1,24 @@
+[Unit]
+Description=Kokoro Reader companion TTS server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={{SERVER_DIR}}
+ExecStart={{NODE_BIN}} {{SERVER_DIR}}/src/index.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Light sandboxing. Left conservative on purpose (no ProtectHome/
+# ProtectSystem) since this is a *user* unit that needs to read model
+# weights it downloads under its own cache and write its config file
+# under ~/.config -- add stricter sandboxing yourself if you want it,
+# tested for your own distro's systemd version.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

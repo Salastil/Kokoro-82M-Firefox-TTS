@@ -1,7 +1,7 @@
 {
   "name": "kokoro-82m-firefox-tts",
-  "version": "0.1.0",
-  "description": "Firefox extension that reads articles or selected text aloud using Kokoro-82M TTS, running fully in-browser on CPU (no server, no cloud).",
+  "version": "0.2.0",
+  "description": "Cross-browser (Firefox + Chromium) extension that reads articles or selected text aloud using Kokoro-82M TTS, synthesized by a companion server on your own machine (see server/).",
   "private": true,
   "type": "module",
   "scripts": {
@@ -16,6 +16,8 @@
   },
   "keywords": [
     "firefox",
+    "chrome",
+    "brave",
     "webextension",
     "tts",
     "kokoro",
@@ -34,6 +36,6 @@
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
-    "kokoro-js": "^1.2.1"
+    "webextension-polyfill": "^0.12.0"
   }
 }

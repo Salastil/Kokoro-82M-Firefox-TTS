@@ -1,50 +1,124 @@
-# Kokoro Reader — Local TTS for Firefox
+# Kokoro Reader
 
-A Firefox extension that reads articles or selected text aloud using
+A cross-browser extension (Firefox + Chromium: Brave, Chrome, etc.)
+that reads articles or selected text aloud using
 [Kokoro-82M](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX),
-running **entirely in your browser, on CPU** — no server, no cloud API,
-nothing sent anywhere except a one-time download of the model weights
-from Hugging Face (which the browser then caches locally).
+synthesized by a small **companion server you run on your own machine**
+-- no cloud TTS API, no text leaving your network. The server prefers
+GPU acceleration (CUDA) when available and transparently falls back to
+CPU otherwise.
 
-## Features
+This used to run entirely in-browser via WASM. It doesn't anymore --
+see "Why a companion server?" below for why that was abandoned.
 
-- **Read selected text** — right-click a selection → "Read selection aloud
-  (Kokoro)", or use the toolbar popup.
-- **Read a whole article** — right-click a page → "Read article aloud
-  (Kokoro)". The page is parsed with Mozilla's [Readability](https://github.com/mozilla/readability)
-  (the same engine behind Firefox's Reader View), shown in a clean
-  reading overlay, and read paragraph by paragraph with the current
-  paragraph highlighted (click any paragraph to jump playback there).
-  Click **minimize (—)** to collapse the overlay into the same small
-  floating mini-player used for selection reads — playback keeps going,
-  and **⤢** brings the full overlay back.
-- **Play / pause / stop** from the popup, the overlay, or the floating
-  mini-player.
-- 28 English voices (US + UK), adjustable speed, and a choice of model
-  precision (quality vs. speed/size) in Settings.
-- **Runs on CPU by default**, via ONNX Runtime Web's WASM backend — no
-  GPU or native dependencies required. GPU acceleration (WebGPU) is
-  available as an opt-in checkbox in Settings → Performance, for
-  systems where it's supported; if it's not, playback automatically
-  falls back to CPU and the status bar says so.
+## Components
 
-## Install (unpacked, for now)
+```
+extension/     the browser extension (Manifest V3, Firefox + Chromium)
+server/        the companion TTS server (Node.js + kokoro-js)
+```
 
-This isn't on addons.mozilla.org (yet), so load it as a temporary
-add-on:
+They're independent: the server has no browser dependency and can run
+on a headless machine; the extension just needs a server it can reach
+to work.
 
-1. Clone this repo (the `extension/` folder is fully self-contained —
-   built bundles and the ONNX Runtime WASM binary are already checked in,
-   so no build step is required to try it).
-2. In Firefox, go to `about:debugging#/runtime/this-firefox`.
-3. Click **"Load Temporary Add-on…"** and select `extension/manifest.json`.
-4. Select some text on any page, right-click, choose **"Read selection
-   aloud (Kokoro)"**. The first read downloads the model (~85MB by
-   default); after that it's cached and starts instantly.
+## 1. Set up the companion server
 
-("Temporary" add-ons are removed when Firefox restarts — for
-persistent use you'd package and sign it, see [Firefox extension
-docs](https://extensionworkshop.com/documentation/publish/).)
+Requires Node.js 20+.
+
+```bash
+cd server
+./install.sh
+```
+
+This installs dependencies, and installs + starts a `systemd --user`
+service that keeps the server running (and restarts it if it crashes).
+To also have it start at boot without logging in first:
+
+```bash
+loginctl enable-linger $USER
+```
+
+On first start, the server generates a random auth token and prints
+it (also in `journalctl --user -u kokoro-reader-server`, and in its
+config file, see below) -- you'll paste this into the extension's
+settings in the next step:
+
+```
+[server] auth token: 7c1e...redacted...
+[server] paste this into the extension's Settings > Companion server.
+```
+
+The first request to the server downloads Kokoro-82M's weights from
+Hugging Face (~85MB by default); after that they're cached under the
+server's own cache directory and it starts instantly.
+
+Useful commands:
+
+```bash
+systemctl --user status kokoro-reader-server
+journalctl --user -u kokoro-reader-server -f
+systemctl --user restart kokoro-reader-server   # after editing config.json
+```
+
+Config lives at `~/.config/kokoro-reader-server/config.json`
+(`$XDG_CONFIG_HOME` if set) -- port, model precision (`dtype`), and the
+auth token. Restart the service after editing it.
+
+To run it without systemd (e.g. to test, or on non-Linux):
+
+```bash
+cd server
+npm install
+npm start
+```
+
+### GPU acceleration
+
+The server tries CUDA first, then falls back to CPU automatically --
+no configuration needed either way, and `/health` reports which one is
+actually in use. This only helps **NVIDIA** GPUs: the prebuilt
+`onnxruntime-node` binary ships CPU + CUDA/TensorRT execution
+providers on Linux x64, with no ROCm/MIGraphX build for AMD GPUs. On
+AMD (or any non-CUDA) hardware it'll cleanly fall back to CPU -- which
+is still native multi-threaded inference, not the single-threaded WASM
+the in-browser version was stuck with (see below).
+
+## 2. Install the extension
+
+Not on a store (yet), so load it unpacked. `extension/` is
+self-contained -- bundles are checked in, no build step required to
+try it.
+
+**Firefox:** `about:debugging#/runtime/this-firefox` → "Load Temporary
+Add-on…" → select `extension/manifest.json`. (Temporary add-ons are
+removed on restart; for persistent use you'd sign it, see
+[Firefox extension docs](https://extensionworkshop.com/documentation/publish/).)
+
+**Brave / Chrome:** `brave://extensions` or `chrome://extensions` →
+enable Developer mode → "Load unpacked" → select the `extension/`
+folder. Unlike Firefox, this persists across restarts without signing.
+
+Then open the extension's options page and fill in the server URL
+(`http://127.0.0.1:8787` by default) and the auth token the server
+printed on first start. "Test connection" should report the model
+status and which device (`cuda`/`cpu`) it's running on.
+
+## Use
+
+- Select text → right-click → **"Read selection aloud (Kokoro)"**, or
+  use the toolbar popup.
+- Right-click a page → **"Read article aloud (Kokoro)"**. The page is
+  parsed with Mozilla's [Readability](https://github.com/mozilla/readability)
+  (the same engine behind Firefox's Reader View) into a clean reading
+  overlay, read paragraph by paragraph with the current paragraph
+  highlighted (click any paragraph to jump playback there). Click
+  **minimize (—)** to collapse it into the same small floating
+  mini-player selection reads use -- playback keeps going, **⤢**
+  brings the full overlay back.
+- Play / pause / stop from the popup, the overlay, or the mini-player.
+- 28 English voices (US + UK) and adjustable speed, in the popup or
+  options page.
 
 ## Building from source
 
@@ -52,158 +126,121 @@ Only needed if you change code under `src/`:
 
 ```bash
 npm install
-npm run build      # bundles src/worker + src/content into extension/
-npm run lint:ext    # web-ext lint against extension/
-npm run run:ext      # launches a temporary Firefox profile with it loaded
+npm run build       # bundles src/{background,content,popup,options} into extension/
+npm run lint:ext     # web-ext lint against extension/ (Firefox-side validation)
+npm run run:ext       # launches a temporary Firefox profile with it loaded
 ```
 
-`build.mjs` (esbuild) does two things:
-- Bundles `src/worker/tts-worker.js` (kokoro-js + `@huggingface/transformers`)
-  into `extension/worker/tts-worker.bundle.js`, loaded as a module Worker.
-- Bundles `src/content/content.js` (`@mozilla/readability`) into
-  `extension/content/content.bundle.js`, the content script.
-- Copies the ONNX Runtime Web WASM runtime (`ort-wasm-simd-threaded.jsep.{mjs,wasm}`,
-  vendored from `@huggingface/transformers`'s own `dist/`) into
-  `extension/runtime/`.
-
-Everything else in `extension/` (background script, popup, options,
-manifest) is plain browser JS/HTML/CSS with no build step.
+`build.mjs` (esbuild) bundles four entry points -- `background`,
+`content`, `popup`, `options` -- each pulling in `webextension-polyfill`
+(for a uniform `browser.*` promise-based API on both Firefox and
+Chromium) and, for the content script, `@mozilla/readability`.
 
 ## Architecture
 
 ```
 extension/
-  background/background.js   persistent MV2 background page:
-                              owns the Worker, an <audio> element for
-                              playback, context menus, and message
-                              routing between popup/content scripts
-  worker/tts-worker.bundle.js  dedicated module Worker: owns the
-                              Kokoro-82M model + ONNX Runtime session,
-                              does all synthesis (never blocks the UI)
-  content/content.bundle.js  per-tab: Readability extraction, text
-                              selection, the reading overlay / mini-player
-  popup/                     toolbar popup: quick controls + voice/speed
-  options/                   voice/speed defaults, model quality, cache
-  runtime/                   vendored ONNX Runtime Web WASM binary
+  background/background.bundle.js   MV3 service worker (Chromium) /
+                                     event page (Firefox). No DOM
+                                     dependency at all: context menus,
+                                     settings, talks to the companion
+                                     server, routes messages. Never
+                                     plays audio itself.
+  content/content.bundle.js         per-tab: Readability extraction,
+                                     text selection, the reading
+                                     overlay/mini-player UI, AND actual
+                                     audio playback (a real page
+                                     document exists here in both
+                                     engines, unlike a service worker)
+  popup/                            toolbar popup: quick controls +
+                                     voice/speed
+  options/                          companion server URL + token,
+                                     voice/speed defaults, chunk size
+server/
+  src/tts.js                        model loading, cuda -> cpu fallback
+  src/app.js                        Express app: /health, /synthesize
+  src/config.js                     config file (port, dtype, token)
+  systemd/                          user service unit template
 ```
 
-Text flows as: content script extracts paragraph-level segments (or a
-selection) → background sends them to the worker → worker chunks each
-segment into sentence-sized pieces and synthesizes them **back to
-back, continuously** (it never waits for a chunk to finish *playing*
-before starting the next *synthesis* call -- only `tts.generate()`
-itself is sequential, since it's one CPU-bound call after another) →
-each chunk's WAV audio is posted back to the background page as soon
-as it's ready → background queues and plays chunks through an
-`<audio>` element, picking up the next queued chunk the instant the
-current one's `ended` event fires, and tells the content script which
-paragraph is currently playing, for highlighting.
+Reading flow: content script extracts paragraph-level segments (or a
+selection) → background chunks each segment into sentence-sized pieces
+and calls the server's `/synthesize` **once per chunk, sequentially,
+back to back** (it never waits for a chunk to finish *playing* before
+requesting the next one) → each chunk's WAV audio is sent to the
+content script as soon as it arrives → content script queues and plays
+chunks through its own `<audio>` element, picking up the next queued
+chunk the instant the current one's `ended` event fires, reporting
+playback events (which paragraph is current, paused/stopped/done) back
+to background so the popup stays in sync.
 
-If you notice audible gaps between chunks, that's synthesis falling
-behind real-time playback (each chunk takes longer to generate than it
-takes to speak), not the pipeline waiting around -- see "WASM
-threading" below, the most common cause of that on otherwise-capable
-hardware.
+## Why a companion server?
 
-### WASM threading
-
-ONNX Runtime Web only multithreads WASM inference when its context is
+The original design ran Kokoro-82M entirely in-browser via ONNX
+Runtime Web (WASM), no server at all. That fell apart on real hardware:
+WASM only multithreads when its context is
 [cross-origin isolated](https://developer.mozilla.org/en-US/docs/Web/API/crossOriginIsolated)
-(`SharedArrayBuffer` usable); otherwise it silently forces
-`numThreads = 1` -- on a many-core machine that's the difference
-between using one core and several, and is a very plausible cause of
-synthesis-falling-behind-realtime "gaps" even though the
-producer/consumer pipeline itself is already correct. When isolation
-is confirmed, `tts-worker.js` raises the thread count past ONNX
-Runtime's own conservative default cap. The actual thread count in use
-is surfaced in the status line while reading (e.g. "· 4 CPU threads",
-or "· 1 CPU thread (slow, see Settings)" if isolation isn't available)
-so this is diagnosable from the UI instead of guessed at.
+(`SharedArrayBuffer` usable), and Firefox restricts that to
+**Mozilla-privileged extensions only** -- not something any
+`about:config` flag or manifest key grants to an ordinary extension
+([Bugzilla 1673477](https://bugzilla.mozilla.org/show_bug.cgi?id=1673477),
+[1674383](https://bugzilla.mozilla.org/show_bug.cgi?id=1674383)). So
+in-browser synthesis was permanently stuck on a single CPU core
+regardless of how good the pipeline was, which on a real article-length
+read falls behind real-time playback and produces audible gaps. GPU
+(WebGPU) wasn't a way out either: it's exposed unevenly across
+engines/platforms, and testing it against this specific model produced
+distorted, garbled audio -- an upstream ONNX Runtime Web WebGPU-backend
+bug in how it runs Kokoro's vocoder.
 
-## Privacy / what leaves your machine
+A native companion server sidesteps all of this: it's a normal OS
+process, not sandboxed by browser cross-origin-isolation rules, so it
+gets real multi-threaded CPU inference (or GPU, where available) with
+none of the above caveats. The tradeoff, stated plainly: this is no
+longer "install the extension and go" -- it's a second thing to install
+and keep running. `server/install.sh` and the systemd unit exist to
+make that as close to "install once, forget about it" as possible.
 
-- **Text and audio never leave your computer.** All synthesis runs
-  in a Web Worker using ONNX Runtime Web's WASM (CPU) backend.
-- The **only** network requests are to `huggingface.co` (and its CDN
-  subdomains) to download the Kokoro-82M model weights and voice
-  embeddings the first time you use them. These are cached by the
-  browser (Cache API) and not re-fetched afterward — see Settings →
-  Storage to check/clear the cache.
-- The WASM runtime itself (ONNX Runtime Web) is vendored inside the
-  extension (`extension/runtime/`), not fetched from a CDN at
-  runtime — the only thing fetched remotely is model *data*, never
-  executable code.
+## Security notes
 
-## Settings
+- The companion server binds to loopback by default
+  (`127.0.0.1`/`localhost`) and requires a random bearer token
+  generated on first run for every request, including `/health`.
+  Without the token, an unauthenticated local server would be
+  reachable by *any* page you visit, not just this extension (a classic
+  localhost-CSRF risk) -- the token is the actual access control here,
+  not network exposure.
+- Don't put the server on a network-reachable host without adding your
+  own transport security; it's designed for `localhost` use.
+- The reading overlay renders Readability's extracted text only (no
+  inline formatting/links/images) -- deliberate: it's built from plain
+  text nodes, not injected HTML, so an untrusted page's markup can't
+  run script or styling inside the overlay.
+- No cross-page style isolation (no Shadow DOM) for the overlay/mini-
+  player; class names are namespaced and fairly high-specificity, but
+  a sufficiently hostile page stylesheet could still interfere
+  visually.
 
-- **Voice / speed** — also available directly in the popup.
-- **Model quality** — `q4` (~40MB, fastest), `q8` (~85MB, default,
-  recommended balance), `fp32` (~326MB, best quality, slowest on
-  CPU). Changing this re-downloads weights on next use.
-- **GPU acceleration (WebGPU)** — off by default (CPU/WASM). Turning
-  it on asks ONNX Runtime Web to use WebGPU instead; if it's not
-  actually usable at read-time, it transparently falls back to CPU
-  and says why in the status bar:
-  - *"WebGPU works in this Firefox, but isn't exposed to background
-    Workers yet"* — the most common case as of early 2026: Firefox's
-    WebGPU support has historically landed on the main thread before
-    dedicated Workers (where this extension's synthesis runs), and
-    Linux builds lag Windows. This is a Firefox platform limitation,
-    not something this extension can work around.
-  - *"WebGPU isn't available in this Firefox/profile"* — WebGPU isn't
-    enabled at all here; check `about:config` → `dom.webgpu.enabled`,
-    or update Firefox.
-  - *"No compatible WebGPU adapter found"* — WebGPU is exposed, but
-    `requestAdapter()` couldn't find/use your GPU (driver/blocklist
-    issue).
+## Limitations / known issues
 
-  The options page's Performance section shows a live "Detected: …"
-  line reporting which of these applies in your browser right now,
-  independent of whether you've actually started a read.
-- **Max characters per synthesis chunk** — how much text is sent to
-  the model per call; smaller is choppier but starts playing sooner,
-  larger sounds more natural but has more latency per chunk.
-- **Clear cached model data** — frees the Cache Storage entries for
-  the model/tokenizer/voices.
-
-## Limitations / known issues (v0.1)
-
-- **GPU acceleration (WebGPU) can produce distorted/garbled audio**
-  ("dog growling") on systems where it's actually exercised, confirmed
-  on Firefox/Linux with a WebGPU-capable GPU. All the audio decode/
-  playback code is identical regardless of backend, so this points to
-  an upstream ONNX Runtime Web WebGPU-backend correctness bug in how
-  it runs Kokoro's vocoder, not something fixable from this extension.
-  CPU (the default) is unaffected. Leave GPU acceleration off unless
-  you're specifically experimenting with it.
 - English only (US/UK voices). Kokoro-82M supports other languages
   upstream, but they need a different phonemizer language pack this
   extension doesn't wire up yet.
-- The reading overlay renders Readability's extracted text only
-  (no inline formatting/links/images) — this is deliberate: it's built
-  from plain text nodes, not injected HTML, so an untrusted page's
-  markup can't run script or styling inside the overlay.
-- No cross-page style isolation (no Shadow DOM) for the overlay/mini-player;
-  class names are namespaced and fairly high-specificity, but a
-  sufficiently hostile page stylesheet could still interfere visually.
-- Threaded WASM (faster, uses multiple CPU cores) needs
-  `SharedArrayBuffer`; Firefox extension pages typically have this
-  available without extra configuration, but if your build/profile
-  doesn't, it falls back to a single thread automatically (slower,
-  still correct).
-- Not signed/listed on AMO. `web-ext lint` reports 0 errors, but 5
-  expected warnings (`UNSAFE_VAR_ASSIGNMENT` for `innerHTML`/dynamic
-  `import()`, `DANGEROUS_EVAL` for the `Function` constructor) that
-  come from the vendored Readability and ONNX Runtime Web libraries
-  operating on a cloned/same-origin DOM and instantiating WebAssembly,
-  respectively — both standard, expected patterns for these libraries
-  (the same ones Firefox's own Reader View and Mozilla's
-  Translations feature rely on), not bugs in this extension's code.
-- Built/vendored binaries (`extension/worker/tts-worker.bundle.js`,
-  `extension/runtime/*.wasm`) are checked into the repo for
-  load-unpacked convenience, which makes this repo larger than a
-  typical source-only project (~20MB, dominated by the ONNX Runtime
-  WASM binary).
+- GPU acceleration is CUDA-only (NVIDIA). AMD/Intel GPUs fall back to
+  CPU -- there's no readily available ROCm/MIGraphX build for
+  `onnxruntime-node`; building one yourself is possible but out of
+  scope here.
+- Not signed/listed on AMO or a Chrome/Brave store. `web-ext lint`
+  reports 0 errors, 3 expected warnings: `MANIFEST_FIELD_UNSUPPORTED`
+  for `background.service_worker` (Firefox doesn't support this key,
+  but tolerates its presence alongside `background.scripts`, which it
+  does read -- this dual declaration is the documented cross-browser
+  compatibility pattern, not a bug), and two `UNSAFE_VAR_ASSIGNMENT`
+  warnings for `innerHTML` from the vendored Readability library
+  operating on a cloned/same-origin DOM (the same pattern Firefox's own
+  Reader View relies on).
+- The server has no HTTPS/TLS -- fine for loopback-only use (the
+  intended setup), not for exposing it beyond your own machine.
 
 ## Credits
 
@@ -211,5 +248,6 @@ so this is diagnosable from the UI instead of guessed at.
 - [kokoro-js](https://github.com/hexgrad/kokoro/tree/main/kokoro.js) /
   [@huggingface/transformers](https://github.com/huggingface/transformers.js) (Apache-2.0/MIT)
 - [Mozilla Readability](https://github.com/mozilla/readability) (Apache-2.0)
+- [webextension-polyfill](https://github.com/mozilla/webextension-polyfill) (MPL-2.0)
 
 This project's own code is MIT licensed (see `LICENSE`).

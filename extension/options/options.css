@@ -39,24 +39,17 @@ h2 {
   margin: 0 0 10px;
 }
 
-h3 {
-  font-size: 13px;
-  margin: 18px 0 8px;
-  opacity: 0.9;
-}
-
 .hint {
   font-size: 12px;
   opacity: 0.75;
   margin: 0 0 10px;
 }
 
-.hint.warning {
-  opacity: 1;
-  background: rgba(179, 38, 30, 0.12);
-  border: 1px solid rgba(179, 38, 30, 0.35);
-  border-radius: 6px;
-  padding: 8px 10px;
+.hint code {
+  font-size: 11px;
+  background: rgba(91, 75, 138, 0.15);
+  padding: 1px 4px;
+  border-radius: 4px;
 }
 
 .field {
@@ -68,26 +61,16 @@ h3 {
 }
 
 .field select,
-.field input[type="number"] {
+.field input[type="number"],
+.field input[type="text"],
+.field input[type="password"] {
   padding: 6px 8px;
   border-radius: 6px;
   border: 1px solid rgba(91, 75, 138, 0.4);
   background: transparent;
   color: inherit;
-  max-width: 260px;
-}
-
-.radio-field {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-size: 13px;
-  margin-bottom: 8px;
-  cursor: pointer;
-}
-
-.radio-field input {
-  margin-top: 3px;
+  max-width: 320px;
+  font-family: inherit;
 }
 
 .btn {
