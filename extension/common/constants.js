@@ -43,6 +43,7 @@ const DEFAULT_SETTINGS = {
   speed: 1.0,
   dtype: "q8", // q8 = quantized int8 weights (~87MB). Good CPU speed/quality tradeoff.
   chunkChars: 300, // max characters fed to the model per synthesis call
+  device: "wasm", // "wasm" = CPU only (default). "webgpu" = opt-in GPU acceleration.
 };
 
 const STORAGE_KEY = "kokoroReaderSettings";

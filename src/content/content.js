@@ -9,8 +9,10 @@ import { Readability } from "@mozilla/readability";
 const HIGHLIGHT_CLASS = "kokoro-current";
 
 let rootEl = null;
-let overlayEls = null; // { backdrop, statusEl, controlBtn, article, segmentEls: Map }
-let miniPlayerEls = null; // { bar, statusEl, controlBtn }
+let overlayEls = null; // { backdrop, statusEl, toggleBtn, article, segmentEls: Map, title }
+let miniPlayerEls = null; // { bar, statusEl, toggleBtn, expandBtn }
+let currentMode = null; // "page" | "selection" | null
+let minimized = false;
 let lastStatus = "idle";
 
 function ensureRoot() {
@@ -63,7 +65,7 @@ function extractArticle() {
 
 // --- shared control bar builder ----------------------------------------
 
-function buildControls(onToggle, onStop, onClose) {
+function buildControls({ onToggle, onMinimize, onStop, onClose }) {
   const controls = document.createElement("div");
   controls.className = "kokoro-controls";
 
@@ -73,6 +75,18 @@ function buildControls(onToggle, onStop, onClose) {
   toggleBtn.textContent = "❚❚";
   toggleBtn.title = "Pause";
   toggleBtn.addEventListener("click", onToggle);
+  controls.appendChild(toggleBtn);
+
+  let minimizeBtn = null;
+  if (onMinimize) {
+    minimizeBtn = document.createElement("button");
+    minimizeBtn.type = "button";
+    minimizeBtn.className = "kokoro-btn kokoro-btn-minimize";
+    minimizeBtn.textContent = "—";
+    minimizeBtn.title = "Minimize (keeps playing)";
+    minimizeBtn.addEventListener("click", onMinimize);
+    controls.appendChild(minimizeBtn);
+  }
 
   const stopBtn = document.createElement("button");
   stopBtn.type = "button";
@@ -80,8 +94,6 @@ function buildControls(onToggle, onStop, onClose) {
   stopBtn.textContent = "◼";
   stopBtn.title = "Stop";
   stopBtn.addEventListener("click", onStop);
-
-  controls.appendChild(toggleBtn);
   controls.appendChild(stopBtn);
 
   if (onClose) {
@@ -94,7 +106,7 @@ function buildControls(onToggle, onStop, onClose) {
     controls.appendChild(closeBtn);
   }
 
-  return { controls, toggleBtn, stopBtn };
+  return { controls, toggleBtn, minimizeBtn, stopBtn };
 }
 
 function sendToggle() {
@@ -113,6 +125,8 @@ function sendStop() {
 
 function showOverlay(title, segments) {
   closeAll();
+  currentMode = "page";
+  minimized = false;
   const root = ensureRoot();
 
   const backdrop = document.createElement("div");
@@ -131,7 +145,12 @@ function showOverlay(title, segments) {
   const statusEl = document.createElement("div");
   statusEl.className = "kokoro-status";
 
-  const { controls, toggleBtn } = buildControls(sendToggle, sendStop, sendStop);
+  const { controls, toggleBtn } = buildControls({
+    onToggle: sendToggle,
+    onMinimize: minimizeOverlay,
+    onStop: sendStop,
+    onClose: sendStop,
+  });
 
   header.appendChild(titleEl);
   header.appendChild(statusEl);
@@ -159,30 +178,72 @@ function showOverlay(title, segments) {
   backdrop.appendChild(panel);
   root.appendChild(backdrop);
 
-  overlayEls = { backdrop, statusEl, toggleBtn, article: articleEl, segmentEls };
+  overlayEls = {
+    backdrop,
+    statusEl,
+    toggleBtn,
+    article: articleEl,
+    segmentEls,
+    title: title || "Reading article",
+  };
 }
 
-// --- mini player (selection reading mode) --------------------------------
+function minimizeOverlay() {
+  if (!overlayEls || minimized) return;
+  overlayEls.backdrop.style.display = "none";
+  minimized = true;
+  showMiniBar();
+}
 
-function showMiniPlayer() {
-  closeAll();
+function restoreOverlay() {
+  if (!overlayEls || !minimized) return;
+  overlayEls.backdrop.style.display = "";
+  minimized = false;
+  if (miniPlayerEls) {
+    miniPlayerEls.bar.remove();
+    miniPlayerEls = null;
+  }
+}
+
+// --- mini player (selection reading mode, and minimized article mode) ----
+
+function showMiniBar() {
+  if (miniPlayerEls) return;
   const root = ensureRoot();
 
   const bar = document.createElement("div");
   bar.className = "kokoro-mini";
 
+  let expandBtn = null;
+  if (currentMode === "page") {
+    expandBtn = document.createElement("button");
+    expandBtn.type = "button";
+    expandBtn.className = "kokoro-btn kokoro-btn-expand";
+    expandBtn.textContent = "⤢";
+    expandBtn.title = "Expand";
+    expandBtn.addEventListener("click", restoreOverlay);
+    bar.appendChild(expandBtn);
+  }
+
   const statusEl = document.createElement("div");
   statusEl.className = "kokoro-mini-status";
-  statusEl.textContent = "Kokoro Reader";
+  statusEl.textContent = (currentMode === "page" && overlayEls && overlayEls.title) || "Kokoro Reader";
 
-  const { controls, toggleBtn } = buildControls(sendToggle, sendStop, sendStop);
+  const { controls, toggleBtn } = buildControls({ onToggle: sendToggle, onStop: sendStop });
   controls.classList.add("kokoro-mini-controls");
 
   bar.appendChild(statusEl);
   bar.appendChild(controls);
   root.appendChild(bar);
 
-  miniPlayerEls = { bar, statusEl, toggleBtn };
+  miniPlayerEls = { bar, statusEl, toggleBtn, expandBtn };
+}
+
+function showMiniPlayer() {
+  closeAll();
+  currentMode = "selection";
+  minimized = false;
+  showMiniBar();
 }
 
 function closeAll() {
@@ -194,9 +255,12 @@ function closeAll() {
     miniPlayerEls.bar.remove();
     miniPlayerEls = null;
   }
+  currentMode = null;
+  minimized = false;
 }
 
 function statusLabel(state) {
+  const gpuNote = state.deviceFellBack ? " (GPU unavailable, using CPU)" : "";
   switch (state.status) {
     case "loading-model": {
       const pct = state.modelLoadProgress && state.modelLoadProgress.progress;
@@ -205,11 +269,11 @@ function statusLabel(state) {
         : "Loading Kokoro model…";
     }
     case "synthesizing":
-      return "Synthesizing…";
+      return `Synthesizing…${gpuNote}`;
     case "playing":
-      return state.progress.segmentCount > 1
+      return (state.progress.segmentCount > 1
         ? `Reading ${state.progress.segmentIndex + 1} / ${state.progress.segmentCount}`
-        : "Reading…";
+        : "Reading…") + gpuNote;
     case "paused":
       return "Paused";
     case "error":
@@ -241,7 +305,7 @@ function updateUI(state) {
       const current = overlayEls.segmentEls.get(state.currentSegmentId);
       if (current) {
         current.classList.add(HIGHLIGHT_CLASS);
-        current.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (!minimized) current.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }
   }

@@ -48,6 +48,19 @@
   </section>
 
   <section>
+    <h2>Performance</h2>
+    <p class="hint">
+      Synthesis runs on your CPU by default, which is what this extension is designed and
+      tested for. GPU acceleration (WebGPU) is experimental and opt-in -- if your browser or
+      system doesn't support it, Kokoro Reader automatically falls back to CPU.
+    </p>
+    <label class="radio-field">
+      <input type="checkbox" id="gpuCheckbox" />
+      <span>Use GPU acceleration (WebGPU) when available</span>
+    </label>
+  </section>
+
+  <section>
     <h2>Advanced</h2>
     <label class="field">
       <span>Max characters per synthesis chunk</span>

@@ -3,9 +3,10 @@
 // (CPU-heavy) inference never blocks the background page's event loop
 // or the popup/content-script UI.
 //
-// Everything here executes on CPU only: `device: "wasm"` is passed
-// explicitly to KokoroTTS.from_pretrained() below and is never changed
-// at runtime -- WebGPU/WebNN backends are never selected.
+// CPU (`device: "wasm"`) is the default and always the fallback. GPU
+// acceleration via WebGPU is opt-in (Settings > Performance) and is
+// only ever used if the browser actually reports WebGPU support --
+// otherwise resolveDevice() below silently downgrades to "wasm".
 import { KokoroTTS, env as kokoroEnv } from "kokoro-js";
 import { env } from "@huggingface/transformers";
 
@@ -21,21 +22,33 @@ env.useBrowserCache = true;
 
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
+function resolveDevice(requested) {
+  if (requested === "webgpu") {
+    const hasWebGPU = typeof navigator !== "undefined" && !!navigator.gpu;
+    if (hasWebGPU) return { device: "webgpu", fellBack: false };
+    return { device: "wasm", fellBack: true };
+  }
+  return { device: "wasm", fellBack: false };
+}
+
 let ttsPromise = null;
 let loadedDtype = null;
+let loadedDevice = null;
 
-function loadTTS(dtype) {
-  if (ttsPromise && loadedDtype === dtype) return ttsPromise;
+function loadTTS(dtype, device) {
+  if (ttsPromise && loadedDtype === dtype && loadedDevice === device) return ttsPromise;
   loadedDtype = dtype;
+  loadedDevice = device;
   ttsPromise = KokoroTTS.from_pretrained(MODEL_ID, {
     dtype,
-    device: "wasm",
+    device,
     progress_callback: (progress) => {
       postMessage({ type: "progress", progress });
     },
   }).catch((err) => {
     ttsPromise = null;
     loadedDtype = null;
+    loadedDevice = null;
     throw err;
   });
   return ttsPromise;
@@ -78,10 +91,11 @@ function chunkText(text, maxChars) {
 let activeJobId = null;
 
 async function runJob(jobId, segments, options) {
-  const { voice, speed, dtype, chunkChars } = options;
+  const { voice, speed, dtype, chunkChars, device: requestedDevice } = options;
+  const { device, fellBack } = resolveDevice(requestedDevice);
   let tts;
   try {
-    tts = await loadTTS(dtype);
+    tts = await loadTTS(dtype, device);
   } catch (err) {
     if (jobId === activeJobId) {
       postMessage({
@@ -93,7 +107,7 @@ async function runJob(jobId, segments, options) {
     return;
   }
   if (jobId !== activeJobId) return;
-  postMessage({ type: "ready", jobId });
+  postMessage({ type: "ready", jobId, device, requestedDevice, fellBack });
 
   for (let segIdx = 0; segIdx < segments.length; segIdx++) {
     if (jobId !== activeJobId) return;
@@ -161,7 +175,7 @@ self.onmessage = (event) => {
       activeJobId = null;
       break;
     case "warm":
-      loadTTS(msg.dtype || "q8").catch((err) => {
+      loadTTS(msg.dtype || "q8", resolveDevice(msg.device).device).catch((err) => {
         postMessage({
           type: "error",
           jobId: null,

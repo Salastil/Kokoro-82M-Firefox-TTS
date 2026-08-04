@@ -28,6 +28,8 @@ const state = {
   progress: { segmentIndex: 0, segmentCount: 0 },
   modelLoadProgress: null,
   errorMessage: null,
+  device: null, // "wasm" | "webgpu", set once the worker reports which it actually loaded on
+  deviceFellBack: false, // true if webgpu was requested but unavailable, so wasm was used instead
 };
 
 function resetState() {
@@ -39,6 +41,8 @@ function resetState() {
   state.progress = { segmentIndex: 0, segmentCount: 0 };
   state.modelLoadProgress = null;
   state.errorMessage = null;
+  state.device = null;
+  state.deviceFellBack = false;
 }
 
 function broadcastState() {
@@ -85,6 +89,8 @@ function onWorkerMessage(event) {
     case "ready":
       state.status = "synthesizing";
       state.modelLoadProgress = null;
+      state.device = msg.device;
+      state.deviceFellBack = !!msg.fellBack;
       broadcastState();
       break;
     case "audio": {
@@ -229,6 +235,7 @@ async function startJob({ tabId, mode, title, segments }) {
       speed: settings.speed,
       dtype: settings.dtype,
       chunkChars: settings.chunkChars,
+      device: settings.device,
     },
   });
 }

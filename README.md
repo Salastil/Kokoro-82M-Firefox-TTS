@@ -15,12 +15,18 @@ from Hugging Face (which the browser then caches locally).
   (the same engine behind Firefox's Reader View), shown in a clean
   reading overlay, and read paragraph by paragraph with the current
   paragraph highlighted (click any paragraph to jump playback there).
+  Click **minimize (—)** to collapse the overlay into the same small
+  floating mini-player used for selection reads — playback keeps going,
+  and **⤢** brings the full overlay back.
 - **Play / pause / stop** from the popup, the overlay, or the floating
-  mini-player (selection mode).
+  mini-player.
 - 28 English voices (US + UK), adjustable speed, and a choice of model
   precision (quality vs. speed/size) in Settings.
-- Everything runs on CPU via WebAssembly — no GPU, no native
-  dependencies, nothing to install outside the browser.
+- **Runs on CPU by default**, via ONNX Runtime Web's WASM backend — no
+  GPU or native dependencies required. GPU acceleration (WebGPU) is
+  available as an opt-in checkbox in Settings → Performance, for
+  systems where it's supported; if it's not, playback automatically
+  falls back to CPU and the status bar says so.
 
 ## Install (unpacked, for now)
 
@@ -108,6 +114,10 @@ which paragraph is currently playing, for highlighting.
 - **Model quality** — `q4` (~40MB, fastest), `q8` (~85MB, default,
   recommended balance), `fp32` (~326MB, best quality, slowest on
   CPU). Changing this re-downloads weights on next use.
+- **GPU acceleration (WebGPU)** — off by default (CPU/WASM). Turning
+  it on asks ONNX Runtime Web to use WebGPU instead; if the browser
+  doesn't report WebGPU support at read-time, it transparently uses
+  CPU for that session instead of failing.
 - **Max characters per synthesis chunk** — how much text is sent to
   the model per call; smaller is choppier but starts playing sooner,
   larger sounds more natural but has more latency per chunk.

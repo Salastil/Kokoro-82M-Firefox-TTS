@@ -9,6 +9,7 @@ const speedRange = document.getElementById("speedRange");
 const speedValue = document.getElementById("speedValue");
 const chunkCharsInput = document.getElementById("chunkChars");
 const dtypeRadios = document.querySelectorAll('input[name="dtype"]');
+const gpuCheckbox = document.getElementById("gpuCheckbox");
 const clearCacheBtn = document.getElementById("clearCache");
 const cacheStatus = document.getElementById("cacheStatus");
 const savedNote = document.getElementById("savedNote");
@@ -36,6 +37,7 @@ async function loadSettings() {
   speedValue.textContent = `${Number(settings.speed).toFixed(1)}x`;
   chunkCharsInput.value = String(settings.chunkChars);
   for (const r of dtypeRadios) r.checked = r.value === settings.dtype;
+  gpuCheckbox.checked = settings.device === "webgpu";
 }
 
 let saveTimer = null;
@@ -65,6 +67,10 @@ chunkCharsInput.addEventListener("change", () => {
 for (const r of dtypeRadios) {
   r.addEventListener("change", () => save({ dtype: currentDtype() }));
 }
+
+gpuCheckbox.addEventListener("change", () => {
+  save({ device: gpuCheckbox.checked ? "webgpu" : "wasm" });
+});
 
 async function refreshCacheStatus() {
   if (!("caches" in window)) {

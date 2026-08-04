@@ -28,6 +28,7 @@ function populateVoices(selected) {
 }
 
 function statusLabel(state) {
+  const gpuNote = state.deviceFellBack ? " (GPU unavailable, using CPU)" : "";
   switch (state.status) {
     case "loading-model": {
       const pct = state.modelLoadProgress && state.modelLoadProgress.progress;
@@ -36,11 +37,11 @@ function statusLabel(state) {
         : "Loading Kokoro model… (first use downloads ~85MB, cached after)";
     }
     case "synthesizing":
-      return "Synthesizing on CPU…";
+      return `Synthesizing…${gpuNote}`;
     case "playing":
-      return state.progress.segmentCount > 1
+      return (state.progress.segmentCount > 1
         ? `Reading paragraph ${state.progress.segmentIndex + 1} of ${state.progress.segmentCount}`
-        : "Reading…";
+        : "Reading…") + gpuNote;
     case "paused":
       return "Paused";
     case "error":
