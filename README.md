@@ -159,6 +159,27 @@ if the container starts and `/health` never leaves `"loading"` (or
 errors about missing shared libraries), that's the first thing to
 suspect -- report back and I'll adjust the base image.
 
+#### Automatic builds (Gitea Actions)
+
+`.gitea/workflows/docker-build.yml` builds and pushes `cpu`, `rocm`,
+and `cuda` tagged images to a Gitea container registry whenever
+`server/` changes on `main` (or on demand via "Run workflow"). Two
+things it needs that aren't in the file itself:
+
+1. **A runner that can actually build Docker images** -- an
+   `act_runner` registered with your Gitea instance, deployed with
+   Docker-in-Docker or a mounted docker socket. That's a property of
+   how the runner is deployed, not something this workflow controls.
+2. **A `REGISTRY_TOKEN` secret** (Settings > Actions > Secrets on the
+   repo) -- a Personal Access Token with `write:package` scope
+   (Settings > Applications > Generate New Token). Gitea's automatic
+   per-run token isn't reliable for container registry auth as of
+   writing ([go-gitea/gitea#23642](https://github.com/go-gitea/gitea/issues/23642)),
+   so this has to be a real PAT, not left unset.
+
+Also edit `REGISTRY_OWNER: CHANGEME` near the top of the workflow file
+to your actual Gitea username/org before it'll push anywhere useful.
+
 ### GPU acceleration
 
 Device selection is handled entirely by PyTorch: the server asks for
