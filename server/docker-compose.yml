@@ -2,8 +2,16 @@
 # For GPU, uncomment the matching block below AND build with the
 # matching torch index (see README.md "Docker" section for the exact
 # commands -- the build arg has to change too, not just this file).
+#
+# `image:` is what makes `docker compose push` push somewhere real
+# instead of "Skipped" (without it, compose just tags the build
+# locally and has nowhere to push it to). Change the owner/tag below
+# to match your registry; `docker login git.salastil.com` first (as
+# the same user -- root's `sudo docker login` if you run compose with
+# sudo, since credentials are stored per-user).
 services:
   kokoro-reader-server:
+    image: git.salastil.com/salastil/kokoro-reader-server:cpu
     build:
       context: .
       args:

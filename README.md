@@ -114,7 +114,13 @@ docker logs -f kokoro-reader-server   # find the auth token here on first run
 ```
 
 Or with `docker-compose.yml` (`docker compose up -d --build`), which
-has the same volumes/port-mapping built in.
+has the same volumes/port-mapping built in and also tags the build as
+`git.salastil.com/salastil/kokoro-reader-server:cpu` (edit that to your
+own registry path) so `docker compose push` (after `docker login
+git.salastil.com`) has somewhere real to push to -- run it once on a
+build machine, then `docker compose pull && docker compose up -d`
+anywhere else (e.g. a NAS) to just run the prebuilt image without
+needing to build there at all.
 
 The two volumes matter: without them, both the auth token and the
 downloaded model weights (~330MB) would be lost every time the
