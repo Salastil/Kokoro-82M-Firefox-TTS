@@ -20,6 +20,16 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# misaki (kokoro's English text-processing dependency) auto-downloads
+# this spaCy model the first time it's actually used if it's missing.
+# That auto-download happens at *runtime*, as the non-root user below,
+# which can't write to this directory -- pip silently falls back to a
+# --user install the already-running server process can't see, so
+# synthesis fails with "[E050] Can't find model 'en_core_web_sm'"
+# despite the install itself reporting success. Installing it here
+# instead, as root, at build time, avoids that entirely.
+RUN python -m spacy download en_core_web_sm
+
 COPY app/ app/
 
 RUN useradd --create-home --uid 1000 kokoro

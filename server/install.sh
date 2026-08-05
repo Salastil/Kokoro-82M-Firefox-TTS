@@ -100,6 +100,14 @@ fi
 echo "==> Installing remaining Python dependencies"
 "$PIP" install -r "$SERVER_DIR/requirements.txt"
 
+# misaki (kokoro's English text-processing dependency) auto-downloads
+# this spaCy model the first time it's actually used if it's missing.
+# Pre-installing it now avoids that happening (with a multi-second
+# stall, and a chance of failing to be picked up by the process that
+# triggered it) during someone's first real synthesis request instead.
+echo "==> Installing the spaCy English model kokoro's phonemizer needs"
+"$VENV_DIR/bin/python" -m spacy download en_core_web_sm
+
 echo "==> Writing systemd user unit to $UNIT_DIR/$UNIT_NAME"
 mkdir -p "$UNIT_DIR"
 sed \
