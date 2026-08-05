@@ -96,6 +96,69 @@ source .venv/bin/activate
 python -m app.main
 ```
 
+### Docker
+
+An alternative to `install.sh`/systemd: build and run the server as a
+container instead. CPU by default (works anywhere, no GPU vendor
+detection needed since the build target is explicit):
+
+```bash
+cd server
+docker build -t kokoro-reader-server .
+docker run -d --name kokoro-reader-server --restart unless-stopped \
+  -p 127.0.0.1:8787:8787 \
+  -v kokoro-config:/home/kokoro/.config \
+  -v kokoro-hf-cache:/home/kokoro/.cache/huggingface \
+  kokoro-reader-server
+docker logs -f kokoro-reader-server   # find the auth token here on first run
+```
+
+Or with `docker-compose.yml` (`docker compose up -d --build`), which
+has the same volumes/port-mapping built in.
+
+The two volumes matter: without them, both the auth token and the
+downloaded model weights (~330MB) would be lost every time the
+container is recreated. `-p 127.0.0.1:8787:8787` keeps it reachable
+only from this machine, matching the non-Docker default -- the
+container itself binds `0.0.0.0` internally (required for Docker's
+port mapping to work at all), so the *host*-side loopback binding is
+what actually keeps this off your LAN.
+
+For GPU, pass a different `TORCH_INDEX_URL` build arg and the matching
+device flags:
+
+```bash
+# AMD (ROCm) -- also needs rocm-hip-sdk installed on the host, see
+# the ROCm setup notes above; the container just needs device access.
+docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/rocm6.2 \
+  -t kokoro-reader-server .
+docker run -d --name kokoro-reader-server --restart unless-stopped \
+  -p 127.0.0.1:8787:8787 \
+  --device=/dev/kfd --device=/dev/dri \
+  --group-add video --group-add render \
+  -v kokoro-config:/home/kokoro/.config \
+  -v kokoro-hf-cache:/home/kokoro/.cache/huggingface \
+  kokoro-reader-server
+
+# NVIDIA (CUDA) -- requires the NVIDIA Container Toolkit on the host.
+docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 \
+  -t kokoro-reader-server .
+docker run -d --name kokoro-reader-server --restart unless-stopped \
+  -p 127.0.0.1:8787:8787 --gpus all \
+  -v kokoro-config:/home/kokoro/.config \
+  -v kokoro-hf-cache:/home/kokoro/.cache/huggingface \
+  kokoro-reader-server
+```
+
+**I haven't been able to test the GPU-in-Docker paths myself** (no GPU
+and no Docker daemon available in the sandbox this was built in --
+only the CPU path's Dockerfile logic has been carefully hand-checked,
+not built). PyTorch's ROCm/CUDA wheels are meant to bundle their own
+runtime libraries so a plain `python:3.12-slim` base should work, but
+if the container starts and `/health` never leaves `"loading"` (or
+errors about missing shared libraries), that's the first thing to
+suspect -- report back and I'll adjust the base image.
+
 ### GPU acceleration
 
 Device selection is handled entirely by PyTorch: the server asks for
@@ -189,6 +252,8 @@ server/
   app/main.py                       FastAPI app: /health, /synthesize
   app/config.py                     config file (port, token)
   systemd/                          user service unit template
+  Dockerfile, docker-compose.yml    containerized alternative to
+                                     install.sh/systemd
 ```
 
 Reading flow: content script extracts paragraph-level segments (or a

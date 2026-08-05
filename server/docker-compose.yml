@@ -1,0 +1,48 @@
+# CPU by default: `docker compose up -d --build`.
+# For GPU, uncomment the matching block below AND build with the
+# matching torch index (see README.md "Docker" section for the exact
+# commands -- the build arg has to change too, not just this file).
+services:
+  kokoro-reader-server:
+    build:
+      context: .
+      args:
+        TORCH_INDEX_URL: https://download.pytorch.org/whl/cpu
+    restart: unless-stopped
+    ports:
+      # Loopback-only on the host side by default -- change to
+      # "8787:8787" only if you deliberately want this reachable from
+      # other machines on your network (the bearer token still gates
+      # access either way, this is defense in depth).
+      - "127.0.0.1:8787:8787"
+    volumes:
+      # Config (incl. the generated auth token) and the downloaded
+      # model weights persist across container recreation.
+      - kokoro-config:/home/kokoro/.config
+      - kokoro-hf-cache:/home/kokoro/.cache/huggingface
+
+    # --- AMD GPU (ROCm) ---
+    # 1. Also set `args: TORCH_INDEX_URL: https://download.pytorch.org/whl/rocm6.2` above.
+    # 2. Uncomment:
+    # devices:
+    #   - /dev/kfd
+    #   - /dev/dri
+    # group_add:
+    #   - video
+    #   - render
+
+    # --- NVIDIA GPU (CUDA) ---
+    # 1. Also set `args: TORCH_INDEX_URL: https://download.pytorch.org/whl/cu121` above.
+    # 2. Requires the NVIDIA Container Toolkit installed on the host.
+    # 3. Uncomment:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  kokoro-config:
+  kokoro-hf-cache:
