@@ -374,6 +374,17 @@ async function readArticleFromTab(tab) {
   await startJob({ tabId: tab.id, mode: "page", title: article.title, segments: article.segments });
 }
 
+// --- keepalive -----------------------------------------------------------
+// The content script holds a runtime.Port open for the duration of a
+// read specifically to keep this (non-persistent) background context
+// from being suspended mid-loop. Nothing needs to happen with the
+// connection itself -- its mere existence is the signal -- but a
+// listener has to be registered or the connection attempt is refused.
+browser.runtime.onConnect.addListener((port) => {
+  if (port.name !== "kokoro-keepalive") return;
+  port.onDisconnect.addListener(() => {});
+});
+
 // --- context menus -----------------------------------------------------
 
 browser.contextMenus.create({

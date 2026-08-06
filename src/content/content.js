@@ -6,6 +6,7 @@
 // DOM at all, this never needs an offscreen-document workaround.
 import browser from "webextension-polyfill";
 import { Readability } from "@mozilla/readability";
+import { DEFAULT_SETTINGS, STORAGE_KEY } from "../common/constants.js";
 
 const HIGHLIGHT_CLASS = "kokoro-current";
 
@@ -27,6 +28,58 @@ const queue = []; // { url, segmentId, segmentIndex, isLastChunk }
 let playingItem = null;
 const audioEl = new Audio();
 audioEl.autoplay = false;
+
+// Volume is purely a playback concern (the server always returns
+// full-amplitude audio), so it's applied here directly rather than
+// threaded through background/job messages. Read once on load, then
+// kept live via storage.onChanged so a mid-read change (from the
+// popup or options page) takes effect immediately on whatever's
+// already playing, not just the next job.
+function clampVolume(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : DEFAULT_SETTINGS.volume;
+}
+
+browser.storage.local.get(STORAGE_KEY).then((stored) => {
+  audioEl.volume = clampVolume((stored[STORAGE_KEY] || {}).volume ?? DEFAULT_SETTINGS.volume);
+});
+
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes[STORAGE_KEY]) {
+    const newSettings = changes[STORAGE_KEY].newValue || {};
+    audioEl.volume = clampVolume(newSettings.volume ?? DEFAULT_SETTINGS.volume);
+  }
+});
+
+// --- background-page keepalive ------------------------------------------
+// A non-persistent background page/service worker can be suspended by
+// the browser mid-read: our background script's synthesis loop is
+// just a sequence of plain fetch() calls, which -- unlike WebExtension
+// API activity -- isn't reliably recognized as "this extension is
+// busy" by Firefox's idle-suspension logic. That kills the loop
+// silently (no error, no cleanup) partway through a long article,
+// which is exactly what was happening. Holding a live runtime.Port
+// open for the duration of a job is the standard, documented way to
+// keep it alive.
+let keepAlivePort = null;
+
+function openKeepAlive() {
+  if (keepAlivePort) return;
+  keepAlivePort = browser.runtime.connect({ name: "kokoro-keepalive" });
+  keepAlivePort.onDisconnect.addListener(() => {
+    keepAlivePort = null;
+  });
+}
+
+function closeKeepAlive() {
+  if (!keepAlivePort) return;
+  try {
+    keepAlivePort.disconnect();
+  } catch {
+    // already gone, nothing to do
+  }
+  keepAlivePort = null;
+}
 
 function ensureRoot() {
   if (rootEl && document.documentElement.contains(rootEl)) return rootEl;
@@ -143,6 +196,7 @@ function teardownPlayback() {
   clearQueue();
   currentJobId = null;
   currentSegmentId = null;
+  closeKeepAlive();
 }
 
 function sendToggle() {
@@ -414,6 +468,7 @@ browser.runtime.onMessage.addListener((msg) => {
       return Promise.resolve(extractArticle());
 
     case "startReading":
+      openKeepAlive();
       currentJobId = msg.jobId;
       segmentCount = msg.segments.length;
       currentSegmentIndex = 0;

@@ -11,6 +11,8 @@ const stopBtn = document.getElementById("stopBtn");
 const voiceSelect = document.getElementById("voiceSelect");
 const speedRange = document.getElementById("speedRange");
 const speedValue = document.getElementById("speedValue");
+const volumeRange = document.getElementById("volumeRange");
+const volumeValue = document.getElementById("volumeValue");
 const openOptions = document.getElementById("openOptions");
 
 let lastStatus = "idle";
@@ -79,6 +81,8 @@ async function loadSettings() {
   populateVoices(settings.voice);
   speedRange.value = String(settings.speed);
   speedValue.textContent = `${Number(settings.speed).toFixed(1)}x`;
+  volumeRange.value = String(settings.volume);
+  volumeValue.textContent = `${Math.round(Number(settings.volume) * 100)}%`;
 }
 
 function saveSettings(partial) {
@@ -115,6 +119,14 @@ speedRange.addEventListener("input", () => {
 
 speedRange.addEventListener("change", () => {
   saveSettings({ speed: Number(speedRange.value) });
+});
+
+// Volume applies live to whatever's currently playing (unlike voice/speed,
+// which only take effect on the next synthesis request), so save on every
+// drag step rather than waiting for release.
+volumeRange.addEventListener("input", () => {
+  volumeValue.textContent = `${Math.round(Number(volumeRange.value) * 100)}%`;
+  saveSettings({ volume: Number(volumeRange.value) });
 });
 
 openOptions.addEventListener("click", () => {

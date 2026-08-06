@@ -8,6 +8,8 @@ const connectionStatus = document.getElementById("connectionStatus");
 const voiceSelect = document.getElementById("voiceSelect");
 const speedRange = document.getElementById("speedRange");
 const speedValue = document.getElementById("speedValue");
+const volumeRange = document.getElementById("volumeRange");
+const volumeValue = document.getElementById("volumeValue");
 const chunkCharsInput = document.getElementById("chunkChars");
 const savedNote = document.getElementById("savedNote");
 
@@ -29,6 +31,8 @@ async function loadSettings() {
   populateVoices(settings.voice);
   speedRange.value = String(settings.speed);
   speedValue.textContent = `${Number(settings.speed).toFixed(1)}x`;
+  volumeRange.value = String(settings.volume);
+  volumeValue.textContent = `${Math.round(Number(settings.volume) * 100)}%`;
   chunkCharsInput.value = String(settings.chunkChars);
 }
 
@@ -102,6 +106,11 @@ speedRange.addEventListener("input", () => {
   speedValue.textContent = `${Number(speedRange.value).toFixed(1)}x`;
 });
 speedRange.addEventListener("change", () => save({ speed: Number(speedRange.value) }));
+
+volumeRange.addEventListener("input", () => {
+  volumeValue.textContent = `${Math.round(Number(volumeRange.value) * 100)}%`;
+  save({ volume: Number(volumeRange.value) });
+});
 
 chunkCharsInput.addEventListener("change", () => {
   const val = Math.max(80, Math.min(800, Number(chunkCharsInput.value) || 400));

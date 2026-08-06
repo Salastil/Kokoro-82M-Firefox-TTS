@@ -41,6 +41,7 @@ export const KOKORO_VOICES = [
 export const DEFAULT_SETTINGS = {
   voice: "af_heart",
   speed: 1.0,
+  volume: 1.0, // 0-1, applied client-side to the <audio> element -- the server always returns full-amplitude audio
   chunkChars: 400, // max characters sent to the server per synthesis request
   serverUrl: "http://127.0.0.1:8787",
   serverToken: "",
