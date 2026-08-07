@@ -91,6 +91,38 @@ h2 {
   background: rgba(91, 75, 138, 0.25);
 }
 
+.log-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.log-toolbar select {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(91, 75, 138, 0.4);
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.log-pane {
+  margin: 0;
+  height: 260px;
+  overflow-y: auto;
+  overflow-x: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(91, 75, 138, 0.3);
+  background: rgba(91, 75, 138, 0.08);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
 .saved-note {
   position: fixed;
   bottom: 20px;

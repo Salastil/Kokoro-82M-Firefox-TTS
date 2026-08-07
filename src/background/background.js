@@ -8,6 +8,46 @@
 import browser from "webextension-polyfill";
 import { KOKORO_VOICES, DEFAULT_SETTINGS, STORAGE_KEY } from "../common/constants.js";
 
+// --- diagnostics log ---------------------------------------------------
+// A ring buffer of timestamped events (server requests, retries, job
+// lifecycle, playback events forwarded from the content script) that the
+// options page's Diagnostics pane reads live. Persisted to storage so a
+// background-context restart -- the exact failure mode a stall pane
+// exists to catch -- doesn't wipe the trail right when it matters; the
+// "(re)initialized" entry below is the tell if that's what's happening.
+const MAX_LOG_ENTRIES = 500;
+const LOG_STORAGE_KEY = "kokoroReaderLogs";
+let logBuffer = [];
+let logCounter = 0;
+let logPersistTimer = null;
+
+function persistLogs() {
+  clearTimeout(logPersistTimer);
+  logPersistTimer = setTimeout(() => {
+    browser.storage.local.set({ [LOG_STORAGE_KEY]: logBuffer }).catch(() => {});
+  }, 300);
+}
+
+function logEvent(source, level, message, data) {
+  const entry = { id: ++logCounter, ts: Date.now(), source, level, message, data: data ?? null };
+  logBuffer.push(entry);
+  if (logBuffer.length > MAX_LOG_ENTRIES) logBuffer.shift();
+  persistLogs();
+  browser.runtime.sendMessage({ type: "logEntry", entry }).catch(() => {});
+  return entry;
+}
+
+browser.storage.local
+  .get(LOG_STORAGE_KEY)
+  .then((stored) => {
+    logBuffer = stored[LOG_STORAGE_KEY] || [];
+    logCounter = logBuffer.length ? logBuffer[logBuffer.length - 1].id : 0;
+  })
+  .catch(() => {})
+  .finally(() => {
+    logEvent("background", "info", "Background context (re)initialized.");
+  });
+
 // --- settings ------------------------------------------------------------
 
 async function getSettings() {
@@ -59,6 +99,7 @@ async function serverRequest(path, { method = "GET", body } = {}) {
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const t0 = Date.now();
   let resp;
   try {
     resp = await fetch(url, {
@@ -71,15 +112,20 @@ async function serverRequest(path, { method = "GET", body } = {}) {
       signal: controller.signal,
     });
   } catch (err) {
+    const elapsedMs = Date.now() - t0;
     if (err.name === "AbortError") {
+      logEvent("server", "error", `${method} ${path} timed out after ${elapsedMs}ms`, { path });
       throw new Error(`Companion server at ${base} took longer than ${REQUEST_TIMEOUT_MS / 1000}s to respond.`);
     }
+    logEvent("server", "error", `${method} ${path} network error after ${elapsedMs}ms: ${err.message}`, { path });
     throw new Error(`Could not reach the companion server at ${base}. Is it running?`);
   } finally {
     clearTimeout(timeoutId);
   }
 
+  const elapsedMs = Date.now() - t0;
   if (resp.status === 401) {
+    logEvent("server", "error", `${method} ${path} -> 401 (${elapsedMs}ms)`, { path });
     throw new Error("Companion server rejected the auth token -- check Settings.");
   }
   if (!resp.ok) {
@@ -90,8 +136,10 @@ async function serverRequest(path, { method = "GET", body } = {}) {
     } catch {
       // ignore, use the generic message
     }
+    logEvent("server", "warn", `${method} ${path} -> ${resp.status} (${elapsedMs}ms): ${message}`, { path });
     throw new Error(message);
   }
+  logEvent("server", "debug", `${method} ${path} -> ${resp.status} (${elapsedMs}ms)`, { path });
   return resp;
 }
 
@@ -172,6 +220,7 @@ function broadcastState() {
 
 function failJob(jobId, message) {
   if (jobId !== activeJobId) return;
+  logEvent("job", "error", `Job ${jobId} failed: ${message}`, { jobId });
   state.status = "error";
   state.errorMessage = message;
   broadcastState();
@@ -185,12 +234,14 @@ function failJob(jobId, message) {
 async function startJob({ tabId, mode, title, segments }) {
   // Cancel anything in progress first.
   if (activeJobId != null && state.tabId != null) {
+    logEvent("job", "info", `Job ${activeJobId} superseded by a new read before finishing.`, { jobId: activeJobId });
     browser.tabs.sendMessage(state.tabId, { type: "stopReading", jobId: activeJobId, reason: "restart" }).catch(() => {});
   }
 
   const jobId = ++jobCounter;
   activeJobId = jobId;
   currentSegments = segments;
+  logEvent("job", "info", `Job ${jobId} started: mode=${mode} segments=${segments.length}`, { jobId });
 
   const settings = await getSettings();
 
@@ -231,6 +282,7 @@ async function startJob({ tabId, mode, title, segments }) {
       chunks.push({ text, segmentId: segment.id, segmentIndex });
     }
   });
+  logEvent("job", "info", `Job ${jobId}: ${chunks.length} chunks queued for synthesis.`, { jobId });
 
   const MAX_ATTEMPTS = 3;
   for (let i = 0; i < chunks.length; i++) {
@@ -246,6 +298,12 @@ async function startJob({ tabId, mode, title, segments }) {
         break;
       } catch (err) {
         lastErr = err;
+        logEvent(
+          "job",
+          "warn",
+          `Job ${jobId}: chunk ${i + 1}/${chunks.length} attempt ${attempt}/${MAX_ATTEMPTS} failed: ${err.message}`,
+          { jobId }
+        );
         if (attempt < MAX_ATTEMPTS) {
           await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }
@@ -256,6 +314,7 @@ async function startJob({ tabId, mode, title, segments }) {
       return;
     }
     if (jobId !== activeJobId) return;
+    logEvent("job", "debug", `Job ${jobId}: chunk ${i + 1}/${chunks.length} synthesized, dispatching to tab.`, { jobId });
     // Not awaited on purpose: nothing downstream needs the response, and
     // the synthesis loop must not be able to stall on message delivery
     // the way it could stall on an unbounded fetch above. Dispatch order
@@ -269,8 +328,13 @@ async function startJob({ tabId, mode, title, segments }) {
         isLastChunk: i === chunks.length - 1,
         buffer,
       })
-      .catch(() => {});
+      .catch((err) => {
+        logEvent("job", "warn", `Job ${jobId}: chunk ${i + 1}/${chunks.length} delivery to tab failed: ${err.message}`, {
+          jobId,
+        });
+      });
   }
+  logEvent("job", "info", `Job ${jobId}: all chunks dispatched.`, { jobId });
 }
 
 async function seekToSegment(segmentId) {
@@ -288,6 +352,7 @@ async function seekToSegment(segmentId) {
 function stopJob() {
   const tabId = state.tabId;
   const jobId = activeJobId;
+  logEvent("job", "info", `Job ${jobId} stopped by user.`, { jobId });
   activeJobId = null;
   resetState();
   broadcastState();
@@ -313,6 +378,8 @@ function resumeJob() {
 // Events reported by the content script that actually owns playback.
 function onContentEvent(msg) {
   if (msg.jobId !== activeJobId) return; // stale job, ignore
+  const detail = msg.segmentIndex != null ? ` (segment ${msg.segmentIndex})` : "";
+  logEvent("content", "debug", `Content event: ${msg.kind}${detail}`, { jobId: msg.jobId });
   switch (msg.kind) {
     case "segmentStarted":
       state.status = "playing";
@@ -415,7 +482,10 @@ async function readArticleFromTab(tab) {
 // listener has to be registered or the connection attempt is refused.
 browser.runtime.onConnect.addListener((port) => {
   if (port.name !== "kokoro-keepalive") return;
-  port.onDisconnect.addListener(() => {});
+  logEvent("background", "debug", "Keepalive Port connected.");
+  port.onDisconnect.addListener(() => {
+    logEvent("background", "debug", "Keepalive Port disconnected.");
+  });
 });
 
 // --- context menus -----------------------------------------------------
@@ -471,6 +541,15 @@ browser.runtime.onMessage.addListener((msg) => {
       return seekToSegment(msg.segmentId);
     case "contentEvent":
       onContentEvent(msg);
+      return undefined;
+    case "getLogs":
+      return Promise.resolve({ logs: logBuffer });
+    case "clearLogs":
+      logBuffer = [];
+      logEvent("background", "info", "Logs cleared by user.");
+      return Promise.resolve();
+    case "logEvent":
+      logEvent(msg.source || "content", msg.level || "info", msg.message, msg.data);
       return undefined;
     default:
       return undefined;

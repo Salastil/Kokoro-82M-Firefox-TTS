@@ -64,6 +64,27 @@
     </p>
   </section>
 
+  <section>
+    <h2>Diagnostics</h2>
+    <p class="hint">
+      Live log of server requests and playback events -- useful for pinpointing exactly
+      where a read stalls or fails. Persists across background-script restarts so a
+      silent stall still leaves a trail. If a read gets stuck, copy the log here before
+      stopping it and share it when reporting the issue.
+    </p>
+    <div class="log-toolbar">
+      <select id="logLevelFilter">
+        <option value="debug">All levels</option>
+        <option value="info" selected>Info and above</option>
+        <option value="warn">Warnings and above</option>
+        <option value="error">Errors only</option>
+      </select>
+      <button id="copyLogs" class="btn btn-secondary" type="button">Copy logs</button>
+      <button id="clearLogs" class="btn btn-secondary" type="button">Clear logs</button>
+    </div>
+    <pre id="logPane" class="log-pane"></pre>
+  </section>
+
   <div id="savedNote" class="saved-note" hidden>Saved</div>
 
   <script src="options.bundle.js"></script>

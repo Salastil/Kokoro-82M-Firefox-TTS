@@ -12,6 +12,10 @@ const volumeRange = document.getElementById("volumeRange");
 const volumeValue = document.getElementById("volumeValue");
 const chunkCharsInput = document.getElementById("chunkChars");
 const savedNote = document.getElementById("savedNote");
+const logPane = document.getElementById("logPane");
+const logLevelFilter = document.getElementById("logLevelFilter");
+const copyLogsBtn = document.getElementById("copyLogs");
+const clearLogsBtn = document.getElementById("clearLogs");
 
 function populateVoices(selected) {
   voiceSelect.innerHTML = "";
@@ -116,6 +120,71 @@ chunkCharsInput.addEventListener("change", () => {
   const val = Math.max(80, Math.min(800, Number(chunkCharsInput.value) || 400));
   chunkCharsInput.value = String(val);
   save({ chunkChars: val });
+});
+
+// --- diagnostics log ------------------------------------------------------
+
+const LOG_LEVEL_RANK = { debug: 0, info: 1, warn: 2, error: 3 };
+let logEntries = [];
+
+function formatLogTime(ts) {
+  const d = new Date(ts);
+  const time = d.toLocaleTimeString(undefined, { hour12: false });
+  return `${time}.${String(d.getMilliseconds()).padStart(3, "0")}`;
+}
+
+function formatLogEntry(entry) {
+  const extra = entry.data ? ` ${JSON.stringify(entry.data)}` : "";
+  return `[${formatLogTime(entry.ts)}] [${entry.source}] [${entry.level}] ${entry.message}${extra}`;
+}
+
+function renderLogs() {
+  const minRank = LOG_LEVEL_RANK[logLevelFilter.value] ?? 1;
+  // Only auto-scroll if the user was already at (or near) the bottom --
+  // otherwise a live-updating pane yanks their scroll position away
+  // right as they're trying to read something further up.
+  const nearBottom = logPane.scrollHeight - logPane.scrollTop - logPane.clientHeight < 40;
+  const visible = logEntries.filter((e) => (LOG_LEVEL_RANK[e.level] ?? 1) >= minRank);
+  logPane.textContent = visible.map(formatLogEntry).join("\n");
+  if (nearBottom) logPane.scrollTop = logPane.scrollHeight;
+}
+
+function appendLog(entry) {
+  logEntries.push(entry);
+  if (logEntries.length > 500) logEntries.shift();
+  renderLogs();
+}
+
+browser.runtime.sendMessage({ type: "getLogs" }).then((resp) => {
+  logEntries = (resp && resp.logs) || [];
+  renderLogs();
+});
+
+browser.runtime.onMessage.addListener((msg) => {
+  if (msg && msg.type === "logEntry") appendLog(msg.entry);
+});
+
+logLevelFilter.addEventListener("change", renderLogs);
+
+clearLogsBtn.addEventListener("click", () => {
+  browser.runtime.sendMessage({ type: "clearLogs" }).then(() => {
+    logEntries = [];
+    renderLogs();
+  });
+});
+
+copyLogsBtn.addEventListener("click", async () => {
+  const text = logEntries.map(formatLogEntry).join("\n");
+  const original = copyLogsBtn.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    copyLogsBtn.textContent = "Copied!";
+  } catch {
+    copyLogsBtn.textContent = "Copy failed";
+  }
+  setTimeout(() => {
+    copyLogsBtn.textContent = original;
+  }, 1200);
 });
 
 loadSettings();

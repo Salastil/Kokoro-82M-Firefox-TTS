@@ -29,6 +29,14 @@ let playingItem = null;
 const audioEl = new Audio();
 audioEl.autoplay = false;
 
+// Forwards to the background script's diagnostics ring buffer (see
+// logEvent() there) so the options page's Diagnostics pane shows a
+// single interleaved timeline of server, job, and playback events --
+// this context has no Diagnostics UI of its own to show it in directly.
+function log(level, message, data) {
+  browser.runtime.sendMessage({ type: "logEvent", source: "content", level, message, data: data ?? null }).catch(() => {});
+}
+
 // Volume is purely a playback concern (the server always returns
 // full-amplitude audio), so it's applied here directly rather than
 // threaded through background/job messages. Read once on load, then
@@ -66,13 +74,19 @@ let keepAlivePort = null;
 function openKeepAlive() {
   if (keepAlivePort) return;
   keepAlivePort = browser.runtime.connect({ name: "kokoro-keepalive" });
+  log("debug", "Keepalive Port opened.");
   keepAlivePort.onDisconnect.addListener(() => {
     keepAlivePort = null;
     // The port can also drop on its own (e.g. the background context
     // briefly recycling) independent of the read actually finishing --
     // reopen it immediately so a long article doesn't silently lose its
     // keepalive partway through.
-    if (currentJobId != null) openKeepAlive();
+    if (currentJobId != null) {
+      log("warn", "Keepalive Port disconnected unexpectedly mid-job -- reopening.");
+      openKeepAlive();
+    } else {
+      log("debug", "Keepalive Port disconnected.");
+    }
   });
 }
 
@@ -164,6 +178,7 @@ audioEl.addEventListener("ended", () => {
     playingItem = null;
   }
   if (wasLast) {
+    log("info", "Playback complete: last chunk finished.");
     reportEvent("allPlaybackDone");
     teardownPlayback();
     closeAll();
@@ -172,6 +187,7 @@ audioEl.addEventListener("ended", () => {
   if (queue.length > 0) {
     maybeStartPlayback();
   } else {
+    log("debug", "Playback queue empty -- waiting on more chunks from the server.");
     localStatus = "synthesizing"; // caught up with the server, waiting for more
     updateStatusUI();
     reportEvent("buffering");
@@ -179,6 +195,7 @@ audioEl.addEventListener("ended", () => {
 });
 
 function failPlayback(message) {
+  log("error", `Playback failed: ${message}`);
   errorMessage = message;
   localStatus = "error";
   updateStatusUI();
@@ -473,6 +490,7 @@ browser.runtime.onMessage.addListener((msg) => {
       return Promise.resolve(extractArticle());
 
     case "startReading":
+      log("info", `startReading: jobId=${msg.jobId} mode=${msg.mode} segments=${msg.segments.length}`);
       openKeepAlive();
       currentJobId = msg.jobId;
       segmentCount = msg.segments.length;
@@ -490,7 +508,10 @@ browser.runtime.onMessage.addListener((msg) => {
       return undefined;
 
     case "audioChunk": {
-      if (msg.jobId !== currentJobId) return undefined; // stale, ignore
+      if (msg.jobId !== currentJobId) {
+        log("warn", `audioChunk for stale jobId=${msg.jobId} (current=${currentJobId}) -- dropped.`);
+        return undefined; // stale, ignore
+      }
       const url = URL.createObjectURL(new Blob([msg.buffer], { type: "audio/wav" }));
       queue.push({
         url,
@@ -498,12 +519,14 @@ browser.runtime.onMessage.addListener((msg) => {
         segmentIndex: msg.segmentIndex,
         isLastChunk: msg.isLastChunk,
       });
+      log("debug", `audioChunk received: segment ${msg.segmentIndex} isLast=${msg.isLastChunk} queueLength=${queue.length}`);
       maybeStartPlayback();
       return undefined;
     }
 
     case "stopReading":
       if (msg.jobId != null && msg.jobId !== currentJobId) return undefined; // stale, ignore
+      log("info", `stopReading: reason=${msg.reason || "unknown"}`);
       teardownPlayback();
       closeAll();
       return undefined;
