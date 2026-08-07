@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Kokoro Reader",
   "short_name": "Kokoro Reader",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Reads articles or selected text aloud using Kokoro-82M, synthesized by a companion server on your own machine (CPU or GPU) -- no cloud TTS API, no text sent anywhere outside your network.",
   "browser_specific_settings": {
     "gecko": {

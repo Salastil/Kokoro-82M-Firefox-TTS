@@ -68,6 +68,11 @@ function openKeepAlive() {
   keepAlivePort = browser.runtime.connect({ name: "kokoro-keepalive" });
   keepAlivePort.onDisconnect.addListener(() => {
     keepAlivePort = null;
+    // The port can also drop on its own (e.g. the background context
+    // briefly recycling) independent of the read actually finishing --
+    // reopen it immediately so a long article doesn't silently lose its
+    // keepalive partway through.
+    if (currentJobId != null) openKeepAlive();
   });
 }
 

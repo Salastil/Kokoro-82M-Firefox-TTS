@@ -36,6 +36,14 @@ function normalizeServerUrl(raw) {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
 }
 
+// A hung fetch (dropped connection, server wedged, etc.) would otherwise
+// await forever with no error and no way to recover -- exactly the
+// silent-stall symptom long articles were hitting, just moved one layer
+// down from the background-suspension issue the keepalive Port fixed.
+// Bounding every request means a stuck one surfaces as a normal caught
+// error instead of hanging the synthesis loop indefinitely.
+const REQUEST_TIMEOUT_MS = 60000;
+
 async function serverRequest(path, { method = "GET", body } = {}) {
   const settings = await getSettings();
   if (!settings.serverUrl) {
@@ -49,6 +57,8 @@ async function serverRequest(path, { method = "GET", body } = {}) {
     throw new Error(`"${settings.serverUrl}" isn't a valid server URL -- check Settings.`);
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let resp;
   try {
     resp = await fetch(url, {
@@ -58,9 +68,15 @@ async function serverRequest(path, { method = "GET", body } = {}) {
         ...(body ? { "Content-Type": "application/json" } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
     });
-  } catch {
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(`Companion server at ${base} took longer than ${REQUEST_TIMEOUT_MS / 1000}s to respond.`);
+    }
     throw new Error(`Could not reach the companion server at ${base}. Is it running?`);
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (resp.status === 401) {
@@ -216,18 +232,35 @@ async function startJob({ tabId, mode, title, segments }) {
     }
   });
 
+  const MAX_ATTEMPTS = 3;
   for (let i = 0; i < chunks.length; i++) {
     if (jobId !== activeJobId) return;
     const chunk = chunks[i];
     let buffer;
-    try {
-      buffer = await synthesizeChunk(chunk.text, { voice: settings.voice, speed: settings.speed });
-    } catch (err) {
-      failJob(jobId, err.message);
+    let lastErr = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      if (jobId !== activeJobId) return;
+      try {
+        buffer = await synthesizeChunk(chunk.text, { voice: settings.voice, speed: settings.speed });
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        }
+      }
+    }
+    if (lastErr) {
+      failJob(jobId, lastErr.message);
       return;
     }
     if (jobId !== activeJobId) return;
-    await browser.tabs
+    // Not awaited on purpose: nothing downstream needs the response, and
+    // the synthesis loop must not be able to stall on message delivery
+    // the way it could stall on an unbounded fetch above. Dispatch order
+    // is preserved by the messaging API even without awaiting each call.
+    browser.tabs
       .sendMessage(tabId, {
         type: "audioChunk",
         jobId,
