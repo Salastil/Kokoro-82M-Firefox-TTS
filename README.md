@@ -128,6 +128,37 @@ container itself binds `0.0.0.0` internally (required for Docker's
 port mapping to work at all), so the *host*-side loopback binding is
 what actually keeps this off your LAN.
 
+#### Bind-mounting a host directory (Unraid, Synology, etc.)
+
+The examples above use named volumes (`-v kokoro-config:...`), which
+Docker creates pre-owned by the image's user -- no permission issues.
+If you bind-mount a host *path* instead (`-v /mnt/user/appdata/kokoro/.config:/home/kokoro/.config`,
+common on Unraid/Synology-style UIs), that path keeps whatever
+ownership it already has on the host. The server runs as a non-root
+user inside the container, so a host directory it doesn't own (Unraid's
+appdata shares default to root) fails with `PermissionError: [Errno 13]
+Permission denied` trying to create its config directory.
+
+Fix: set `PUID`/`PGID` environment variables on the container (same
+convention as most Unraid/linuxserver.io-style images) to match the
+user that should own the bind-mounted files -- the entrypoint chowns
+`/home/kokoro/.config` and `/home/kokoro/.cache/huggingface` to that
+user/group on every start, so it self-heals regardless of what the
+host directory was owned by before:
+
+```bash
+docker run -d --name kokoro-reader-server --restart unless-stopped \
+  -e PUID=99 -e PGID=100 \
+  -p 127.0.0.1:8787:8787 \
+  -v /mnt/user/appdata/kokoro-reader-server/.config:/home/kokoro/.config \
+  -v /mnt/user/appdata/kokoro-reader-server/.cache/huggingface:/home/kokoro/.cache/huggingface \
+  kokoro-reader-server
+```
+
+(`99`/`100` is Unraid's usual `nobody`/`users`; use whatever owns your
+appdata share.) Both default to `1000` if unset, matching the image's
+built-in user -- nothing changes for the named-volume setup above.
+
 #### Remote access (listening mode)
 
 To run the server on one machine and use the extension from a browser

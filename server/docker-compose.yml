@@ -12,6 +12,14 @@ services:
     build:
       context: .
     restart: unless-stopped
+    # environment:
+    #   # Only needed if you switch the volumes below to host bind
+    #   # mounts (e.g. "./config:/home/kokoro/.config") instead of the
+    #   # named volumes here -- matches whatever user/group should own
+    #   # those host paths. Named volumes don't need this. See README's
+    #   # "Bind-mounting a host directory" section.
+    #   PUID: "1000"
+    #   PGID: "1000"
     ports:
       # Loopback-only on the host side by default -- change to
       # "8787:8787" only if you deliberately want this reachable from

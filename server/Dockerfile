@@ -4,6 +4,7 @@ FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       espeak-ng \
+      util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -33,7 +34,17 @@ RUN useradd --create-home --uid 1000 kokoro
 ENV XDG_CONFIG_HOME=/home/kokoro/.config
 ENV HF_HOME=/home/kokoro/.cache/huggingface
 RUN mkdir -p "$XDG_CONFIG_HOME" "$HF_HOME" && chown -R kokoro:kokoro /home/kokoro /app
-USER kokoro
+
+# Stays root here on purpose -- docker-entrypoint.sh re-homes `kokoro`
+# to PUID/PGID (default 1000/1000, matching the useradd above) and
+# chowns the bind-mounted volumes before dropping to that user itself.
+# Needed because a bind-mounted host directory (e.g. Unraid's appdata
+# shares, typically root-owned) keeps its host ownership instead of
+# picking up the image's -- a fixed non-root USER here would then fail
+# to write to it. Named Docker volumes aren't affected either way.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 # Must bind all interfaces inside the container -- Docker's port
 # mapping forwards to this address, not the container's loopback.
