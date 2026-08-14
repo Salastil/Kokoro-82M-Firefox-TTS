@@ -1,6 +1,7 @@
 node_modules/
 *.log
 web-ext-artifacts/
+.amo-upload-uuid
 .venv/
 __pycache__/
 *.pyc

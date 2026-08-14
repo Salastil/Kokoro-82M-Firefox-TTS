@@ -76,6 +76,28 @@ function normalizeServerUrl(raw) {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
 }
 
+// Only loopback is covered by the extension's static host_permissions.
+// Anything else (a companion server on another machine -- "listening
+// mode", see README) needs the optional_host_permissions grant below,
+// requested from the options page (a user gesture, required by Chrome)
+// rather than from here.
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
+function isLoopbackHost(hostname) {
+  return LOOPBACK_HOSTS.has((hostname || "").toLowerCase());
+}
+
+async function hasServerHostPermission(base) {
+  let url;
+  try {
+    url = new URL(base);
+  } catch {
+    return true; // let the fetch below fail with a clearer error
+  }
+  if (isLoopbackHost(url.hostname)) return true;
+  return browser.permissions.contains({ origins: [`${url.protocol}//${url.hostname}/*`] });
+}
+
 // A hung fetch (dropped connection, server wedged, etc.) would otherwise
 // await forever with no error and no way to recover -- exactly the
 // silent-stall symptom long articles were hitting, just moved one layer
@@ -95,6 +117,12 @@ async function serverRequest(path, { method = "GET", body } = {}) {
     url = new URL(path, base).href; // path is always absolute ("/health", "/synthesize")
   } catch {
     throw new Error(`"${settings.serverUrl}" isn't a valid server URL -- check Settings.`);
+  }
+
+  if (!(await hasServerHostPermission(base))) {
+    throw new Error(
+      `Kokoro Reader doesn't have permission to reach ${base} yet -- open Settings and click "Test connection" to grant it.`
+    );
   }
 
   const controller = new AbortController();
@@ -197,8 +225,6 @@ const state = {
   currentSegmentId: null,
   progress: { segmentIndex: 0, segmentCount: 0 },
   errorMessage: null,
-  serverDevice: null, // "cuda" | "cpu" | null -- last known, from /health
-  serverGpuBackend: null, // "rocm" | "cuda" | null -- last known, from /health
 };
 
 function resetState() {
@@ -266,8 +292,6 @@ async function startJob({ tabId, mode, title, segments }) {
     return;
   }
   if (jobId !== activeJobId) return;
-  state.serverDevice = health.device || null;
-  state.serverGpuBackend = health.gpuBackend || null;
   if (health.status !== "ready") {
     failJob(jobId, health.error || `Companion server model isn't ready yet (${health.status}).`);
     return;

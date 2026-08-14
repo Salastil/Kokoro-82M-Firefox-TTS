@@ -22,6 +22,11 @@
       config file, and in <code>journalctl --user -u kokoro-reader-server</code> if you
       installed it as a systemd service).
     </p>
+    <p class="hint">
+      Pointing this at a server on another machine ("listening mode" -- see the repo
+      README)? Click <strong>Test connection</strong> after saving the URL to grant this
+      extension permission to reach that host; your browser will prompt you once.
+    </p>
     <label class="field">
       <span>Server URL</span>
       <input id="serverUrl" type="text" placeholder="http://127.0.0.1:8787" />

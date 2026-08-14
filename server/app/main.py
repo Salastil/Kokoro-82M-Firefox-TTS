@@ -61,8 +61,7 @@ class SynthesizeRequest(BaseModel):
 async def health(_: None = Depends(require_auth)):
     return {
         "status": state.status,
-        "device": state.device,
-        "gpuBackend": state.gpu_backend,
+        "device": "cpu",
         "modelId": MODEL_ID,
         "error": state.error,
     }

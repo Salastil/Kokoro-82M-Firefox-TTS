@@ -28,24 +28,16 @@ function populateVoices(selected) {
   voiceSelect.value = selected;
 }
 
-function deviceNote(state) {
-  if (!state.serverDevice) return "";
-  if (state.serverDevice !== "cuda") return " · server CPU";
-  return state.serverGpuBackend === "rocm" ? " · server GPU (ROCm)" : " · server GPU (CUDA)";
-}
-
 function statusLabel(state) {
   switch (state.status) {
     case "connecting":
       return "Connecting to companion server…";
     case "synthesizing":
-      return `Synthesizing…${deviceNote(state)}`;
+      return "Synthesizing…";
     case "playing":
-      return (
-        (state.progress.segmentCount > 1
-          ? `Reading paragraph ${state.progress.segmentIndex + 1} of ${state.progress.segmentCount}`
-          : "Reading…") + deviceNote(state)
-      );
+      return state.progress.segmentCount > 1
+        ? `Reading paragraph ${state.progress.segmentIndex + 1} of ${state.progress.segmentCount}`
+        : "Reading…";
     case "paused":
       return "Paused";
     case "error":

@@ -57,6 +57,32 @@ function normalizeServerUrl(raw) {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
 }
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
+// Host permission for a non-loopback server ("listening mode", see
+// README) has to be requested from here -- a real click handler -- not
+// from the background script, since Chrome only honors
+// permissions.request() from a user gesture. Returns true if the
+// extension can already (or now can) reach this URL.
+async function ensureServerPermission(urlString) {
+  let url;
+  try {
+    url = new URL(urlString);
+  } catch {
+    return true; // invalid URL -- let the health check surface that error
+  }
+  if (LOOPBACK_HOSTS.has(url.hostname.toLowerCase())) return true;
+
+  const origin = `${url.protocol}//${url.hostname}/*`;
+  if (await browser.permissions.contains({ origins: [origin] })) return true;
+  try {
+    return await browser.permissions.request({ origins: [origin] });
+  } catch {
+    // e.g. optional_host_permissions isn't recognized (Firefox < 128)
+    return false;
+  }
+}
+
 serverUrlInput.addEventListener("change", () => {
   // Self-correct a bare "host:port" (missing http://) so the field
   // shows what's actually being used, not just what was typed.
@@ -82,6 +108,13 @@ testConnectionBtn.addEventListener("click", async () => {
     },
   });
 
+  if (!(await ensureServerPermission(normalizedUrl))) {
+    connectionStatus.textContent =
+      "Permission needed to reach this host -- accept the browser prompt and try again. " +
+      "(Non-localhost servers need Firefox 128+ or a Chromium browser.)";
+    return;
+  }
+
   connectionStatus.textContent = "Checking…";
   const resp = await browser.runtime.sendMessage({ type: "checkServerHealth" });
   if (!resp || !resp.ok) {
@@ -90,13 +123,7 @@ testConnectionBtn.addEventListener("click", async () => {
   }
   const health = resp.health;
   if (health.status === "ready") {
-    const backend =
-      health.device === "cuda"
-        ? health.gpuBackend === "rocm"
-          ? "GPU (ROCm)"
-          : "GPU (CUDA)"
-        : "CPU";
-    connectionStatus.textContent = `Connected -- model ready on ${backend}.`;
+    connectionStatus.textContent = "Connected -- model ready.";
   } else if (health.status === "loading") {
     connectionStatus.textContent = "Connected -- server is still loading the model, try again shortly.";
   } else {

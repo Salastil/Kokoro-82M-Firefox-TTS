@@ -4,14 +4,15 @@ A cross-browser extension (Firefox + Chromium: Brave, Chrome, etc.)
 that reads articles or selected text aloud using
 [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M),
 synthesized by a small **companion server you run on your own machine**
--- no cloud TTS API, no text leaving your network. The server prefers
-GPU acceleration when available (**NVIDIA via CUDA, AMD via ROCm**) and
-transparently falls back to CPU otherwise.
+-- no cloud TTS API, no text leaving your network. The server is
+CPU-only (see "Why Python, and why a companion server at all?" below
+for the history -- it used to also support NVIDIA/AMD GPU acceleration,
+removed since it wasn't worth maintaining two hardware backends nobody
+here could reliably test against).
 
-This used to run entirely in-browser via WASM, then moved to a Node.js
-companion server that could only accelerate NVIDIA GPUs. Now it's a
-Python server instead, specifically so AMD GPUs (ROCm) work too -- see
-"Why Python, and why a companion server at all?" below.
+The extension and server don't have to be on the same machine -- see
+"Remote access (listening mode)" under Docker below to run the server
+on one machine and use the extension from a browser on another.
 
 ## Components
 
@@ -50,12 +51,10 @@ cd server
 ./install.sh
 ```
 
-This creates a venv, detects your GPU and installs a matching `torch`
-build (ROCm for AMD, CUDA for NVIDIA, plain CPU otherwise -- see
-"GPU acceleration" below), installs the rest of the dependencies, and
-installs + starts a `systemd --user` service that keeps the server
-running (and restarts it if it crashes). To also have it start at boot
-without logging in first:
+This creates a venv, installs CPU-only `torch` and the rest of the
+dependencies, and installs + starts a `systemd --user` service that
+keeps the server running (and restarts it if it crashes). To also have
+it start at boot without logging in first:
 
 ```bash
 loginctl enable-linger $USER
@@ -99,8 +98,7 @@ python -m app.main
 ### Docker
 
 An alternative to `install.sh`/systemd: build and run the server as a
-container instead. CPU by default (works anywhere, no GPU vendor
-detection needed since the build target is explicit):
+container instead (CPU only):
 
 ```bash
 cd server
@@ -130,74 +128,58 @@ container itself binds `0.0.0.0` internally (required for Docker's
 port mapping to work at all), so the *host*-side loopback binding is
 what actually keeps this off your LAN.
 
-For GPU, pass a different `TORCH_INDEX_URL` build arg and the matching
-device flags:
+#### Remote access (listening mode)
+
+To run the server on one machine and use the extension from a browser
+on a *different* machine, publish the port on all interfaces instead
+of just loopback -- everything else about the container is identical:
 
 ```bash
-# AMD (ROCm) -- also needs rocm-hip-sdk installed on the host, see
-# the ROCm setup notes above; the container just needs device access.
-docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/rocm6.2 \
-  -t kokoro-reader-server .
 docker run -d --name kokoro-reader-server --restart unless-stopped \
-  -p 127.0.0.1:8787:8787 \
-  --device=/dev/kfd --device=/dev/dri \
-  --group-add video --group-add render \
-  -v kokoro-config:/home/kokoro/.config \
-  -v kokoro-hf-cache:/home/kokoro/.cache/huggingface \
-  kokoro-reader-server
-
-# NVIDIA (CUDA) -- requires the NVIDIA Container Toolkit on the host.
-docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 \
-  -t kokoro-reader-server .
-docker run -d --name kokoro-reader-server --restart unless-stopped \
-  -p 127.0.0.1:8787:8787 --gpus all \
+  -p 8787:8787 \
   -v kokoro-config:/home/kokoro/.config \
   -v kokoro-hf-cache:/home/kokoro/.cache/huggingface \
   kokoro-reader-server
 ```
 
-**I haven't been able to test the GPU-in-Docker paths myself** (no GPU
-and no Docker daemon available in the sandbox this was built in --
-only the CPU path's Dockerfile logic has been carefully hand-checked,
-not built). PyTorch's ROCm/CUDA wheels are meant to bundle their own
-runtime libraries so a plain `python:3.12-slim` base should work, but
-if the container starts and `/health` never leaves `"loading"` (or
-errors about missing shared libraries), that's the first thing to
-suspect -- report back and I'll adjust the base image.
+Then, in the extension's Settings on the *other* machine, set the
+**Server URL** to `http://<server-machine-lan-ip>:8787` and paste the
+auth token from `docker logs kokoro-reader-server`. Click **Test
+connection** -- your browser will prompt for permission to reach that
+host the first time (the extension only has permission for
+localhost by default; this is what grants it access to a specific
+remote host instead of just asking for blanket network access). This
+needs Firefox 128+ (older Firefox only supports loopback servers) or
+any current Chromium browser.
+
+**This has no transport security beyond the bearer token** -- the
+connection is plain HTTP, same as the loopback default. Fine on a
+trusted home LAN; don't do this across an untrusted network without
+putting it behind your own TLS (a reverse proxy, a VPN/Tailscale, etc.)
+first. See "Security notes" below.
 
 #### Automatic builds (Gitea Actions)
 
-`.gitea/workflows/docker-build.yml` builds and pushes `cpu`, `rocm`,
-and `cuda` tagged images to a Gitea container registry whenever
-`server/` changes on `main` (or on demand via "Run workflow"). Two
-things it needs that aren't in the file itself:
+`.gitea/workflows/docker-build.yml` builds and pushes the server image
+to a Gitea container registry whenever `server/` changes on `main` (or
+on demand via "Run workflow"). Two things it needs that aren't in the
+file itself:
 
 1. **A runner that can actually build Docker images** -- an
    `act_runner` registered with your Gitea instance, deployed with
    Docker-in-Docker or a mounted docker socket. That's a property of
    how the runner is deployed, not something this workflow controls.
-2. **A `REGISTRY_TOKEN` secret** (Settings > Actions > Secrets on the
-   repo) -- a Personal Access Token with `write:package` scope
-   (Settings > Applications > Generate New Token). Gitea's automatic
-   per-run token isn't reliable for container registry auth as of
-   writing ([go-gitea/gitea#23642](https://github.com/go-gitea/gitea/issues/23642)),
-   so this has to be a real PAT, not left unset.
+2. **`CI_TOKEN` and `DOCKER` secrets** (Settings > Actions > Secrets on
+   the repo): `CI_TOKEN` is a Gitea Personal Access Token (Settings >
+   Applications > Generate New Token) used for checkout; `DOCKER` is a
+   Personal Access Token with `write:package` scope used to log in to
+   the container registry. Gitea's automatic per-run token isn't
+   reliable for container registry auth as of writing
+   ([go-gitea/gitea#23642](https://github.com/go-gitea/gitea/issues/23642)),
+   so `DOCKER` has to be a real PAT, not left unset.
 
 Also edit `REGISTRY_OWNER: CHANGEME` near the top of the workflow file
 to your actual Gitea username/org before it'll push anywhere useful.
-
-### GPU acceleration
-
-Device selection is handled entirely by PyTorch: the server asks for
-the `cuda` device, and PyTorch auto-detects whether that's actually
-usable, falling back to CPU if not. This isn't NVIDIA-specific despite
-the name -- **ROCm's whole design is that a ROCm-flavored PyTorch
-build makes AMD GPUs answer to the same `torch.cuda` APIs** as NVIDIA
-ones, so the exact same code path accelerates both vendors with zero
-AMD-specific logic needed here. `install.sh` detects your GPU
-(`rocminfo`/`/opt/rocm` for AMD, `nvidia-smi` for NVIDIA) and installs
-the matching `torch` build automatically; `/health` reports which one
-ended up active (`device: "cuda"|"cpu"`, `gpuBackend: "rocm"|"cuda"|null`).
 
 ## 2. Install the extension
 
@@ -217,7 +199,12 @@ folder. Unlike Firefox, this persists across restarts without signing.
 Then open the extension's options page and fill in the server URL
 (`http://127.0.0.1:8787` by default) and the auth token the server
 printed on first start. "Test connection" should report the model
-status and which device (`cuda`/`cpu`) it's running on.
+status. Pointing this at a server on another machine instead? See
+"Remote access (listening mode)" above.
+
+Prefer a signed build over loading unpacked? Every push to `main` that
+touches the extension is auto-signed by CI and published as a
+downloadable `.xpi` build artifact -- see "Automatic builds" below.
 
 ## Use
 
@@ -244,12 +231,36 @@ npm install
 npm run build       # bundles src/{background,content,popup,options} into extension/
 npm run lint:ext     # web-ext lint against extension/ (Firefox-side validation)
 npm run run:ext       # launches a temporary Firefox profile with it loaded
+npm run sign:ext      # self-sign for distribution (needs WEB_EXT_API_KEY/WEB_EXT_API_SECRET env vars)
 ```
 
 `build.mjs` (esbuild) bundles four entry points -- `background`,
 `content`, `popup`, `options` -- each pulling in `webextension-polyfill`
 (for a uniform `browser.*` promise-based API on both Firefox and
 Chromium) and, for the content script, `@mozilla/readability`.
+
+#### Automatic builds (Gitea Actions)
+
+`.gitea/workflows/build-extension.yml` builds, version-bumps, and
+signs the extension on every push to `main` that touches `src/`,
+`extension/`, or `build.mjs` (or on demand via "Run workflow"),
+publishing the resulting `.xpi` as the run's build artifact. AMO
+refuses to re-sign a version it's already seen, so the workflow bumps
+the patch version first (`npm run version:bump`, see
+`scripts/bump-version.mjs` -- `extension/manifest.json` is the source
+of truth, mirrored into `package.json`/`package-lock.json`) and pushes
+that bump straight back to `main` before building.
+
+Needs three secrets (Settings > Actions > Secrets on the repo):
+
+- **`CI_TOKEN`** -- a Gitea Personal Access Token (Settings >
+  Applications > Generate New Token) with repo write access, used for
+  checkout and to push the version-bump commit back to `main`.
+- **`WEB_EXT_API_KEY`** / **`WEB_EXT_API_SECRET`** -- AMO API
+  credentials from
+  [addons.mozilla.org/developers/addon/api/key](https://addons.mozilla.org/developers/addon/api/key/).
+  `web-ext` reads both automatically from the environment, no extra
+  config needed.
 
 ## Architecture
 
@@ -273,9 +284,7 @@ extension/
                                      voice/speed defaults, chunk size
 server/
   app/tts.py                        model loading via the `kokoro`
-                                     package; device selection is just
-                                     "ask PyTorch for cuda", which also
-                                     covers AMD/ROCm (see below)
+                                     package, CPU only
   app/main.py                       FastAPI app: /health, /synthesize
   app/config.py                     config file (port, token)
   systemd/                          user service unit template
@@ -315,31 +324,23 @@ bug in how it runs Kokoro's vocoder.
 
 A native companion server sidesteps all of this: it's a normal OS
 process, not sandboxed by browser cross-origin-isolation rules, so it
-gets real multi-threaded CPU inference (or GPU, where available) with
-none of the above caveats. The tradeoff, stated plainly: this is no
-longer "install the extension and go" -- it's a second thing to install
-and keep running. `server/install.sh` and the systemd unit exist to
-make that as close to "install once, forget about it" as possible.
+gets real multi-threaded CPU inference with none of the above caveats.
+The tradeoff, stated plainly: this is no longer "install the extension
+and go" -- it's a second thing to install and keep running.
+`server/install.sh` and the systemd unit exist to make that as close
+to "install once, forget about it" as possible.
 
 The server was first built in Node.js (reusing `kokoro-js`, the same
-package the in-browser version already used). That worked, but only
-ever accelerated **NVIDIA** GPUs: `onnxruntime-node`'s prebuilt Linux
-binary ships CPU + CUDA/TensorRT execution providers only, with no
-ROCm/MIGraphX build for AMD. There's also no Vulkan execution provider
-in ONNX Runtime at all -- it's been requested repeatedly
-([#21917](https://github.com/microsoft/onnxruntime/issues/21917),
-[#7433](https://github.com/microsoft/onnxruntime/issues/7433)) but
-doesn't exist; the only place Vulkan shows up is as WebGPU's backend on
-Linux, and WebGPU EP is browser-only, not available in `onnxruntime-node`
-in the first place (and is the same code path that produced the
-garbled-audio bug above, so it wouldn't have helped even if it were).
-AMD's actual supported Linux path, ROCm + MIGraphX, only ships prebuilt
-wheels for **Python**, not Node -- so the server is Python now,
+package the in-browser version already used), then rebuilt in Python
 using the official [`kokoro`](https://pypi.org/project/kokoro/) package
-(PyTorch-based) instead of `kokoro-js`. PyTorch's ROCm builds are
-designed so AMD GPUs answer to the same `torch.cuda` APIs NVIDIA GPUs
-do, so `device=None` (auto-detect) covers both vendors with no
-AMD-specific code at all -- see "GPU acceleration" above.
+(PyTorch-based) so it could also accelerate AMD GPUs via ROCm, which
+`onnxruntime-node` (Node's ONNX Runtime binding) had no build for.
+That GPU support -- both NVIDIA/CUDA and AMD/ROCm -- was later removed:
+two hardware backends nobody maintaining this could reliably test
+against wasn't worth carrying, and CPU inference is fast enough in
+practice for real-time-ish article playback. The server stayed Python
+even after dropping GPU support since the `kokoro` package itself is
+Python-only.
 
 ## Security notes
 
@@ -351,7 +352,11 @@ AMD-specific code at all -- see "GPU acceleration" above.
   localhost-CSRF risk) -- the token is the actual access control here,
   not network exposure.
 - Don't put the server on a network-reachable host without adding your
-  own transport security; it's designed for `localhost` use.
+  own transport security. Loopback is the default; "listening mode"
+  (see Docker above) exposes it to your LAN deliberately, and the
+  extension only gets access to a non-localhost host after you
+  explicitly grant it permission (a browser-native prompt) via
+  Settings > Test connection -- it never has blanket network access.
 - The reading overlay renders Readability's extracted text only (no
   inline formatting/links/images) -- deliberate: it's built from plain
   text nodes, not injected HTML, so an untrusted page's markup can't
@@ -366,27 +371,27 @@ AMD-specific code at all -- see "GPU acceleration" above.
 - English only (US/UK voices). Kokoro-82M supports other languages
   upstream, but they need a different phonemizer language pack this
   extension doesn't wire up yet.
-- GPU acceleration covers NVIDIA (CUDA) and AMD (ROCm). Intel GPUs and
-  anything else fall back to CPU -- PyTorch's mainstream GPU backends
-  are CUDA and ROCm; Intel's own PyTorch extension exists but isn't
-  wired up here.
-- `install.sh`'s GPU detection installs a *default* ROCm/CUDA version
-  tag that may not match what's actually installed on your system --
-  if `/health` doesn't report the device you expected, check
-  `torch.version.hip`/`torch.version.cuda` against your driver and
-  reinstall the matching wheel from
-  [pytorch.org/get-started/locally](https://pytorch.org/get-started/locally/).
-- Not signed/listed on AMO or a Chrome/Brave store. `web-ext lint`
-  reports 0 errors, 3 expected warnings: `MANIFEST_FIELD_UNSUPPORTED`
-  for `background.service_worker` (Firefox doesn't support this key,
-  but tolerates its presence alongside `background.scripts`, which it
-  does read -- this dual declaration is the documented cross-browser
-  compatibility pattern, not a bug), and two `UNSAFE_VAR_ASSIGNMENT`
-  warnings for `innerHTML` from the vendored Readability library
-  operating on a cloned/same-origin DOM (the same pattern Firefox's own
-  Reader View relies on).
-- The server has no HTTPS/TLS -- fine for loopback-only use (the
-  intended setup), not for exposing it beyond your own machine.
+- CPU only -- GPU acceleration (NVIDIA/CUDA, AMD/ROCm) was supported at
+  one point and has since been removed; see "Why Python" above.
+- Not listed on AMO or a Chrome/Brave store, so there's no auto-update
+  channel -- CI produces a signed, self-distributed (`unlisted`) `.xpi`
+  per build (see "Automatic builds" above), but you install/update it
+  manually. `web-ext lint` reports 0 errors, 5 expected warnings:
+  `MANIFEST_FIELD_UNSUPPORTED` for `background.service_worker` (Firefox
+  doesn't support this key, but tolerates its presence alongside
+  `background.scripts`, which it does read -- this dual declaration is
+  the documented cross-browser compatibility pattern, not a bug); two
+  `KEY_FIREFOX_UNSUPPORTED_BY_MIN_VERSION` warnings because
+  `optional_host_permissions` (used for the listening-mode permission
+  prompt) needs Firefox 128+ while `strict_min_version` is 121 --
+  expected, see "Remote access (listening mode)" and "Limitations"
+  above; and two `UNSAFE_VAR_ASSIGNMENT` warnings for `innerHTML` from
+  the vendored Readability library operating on a cloned/same-origin
+  DOM (the same pattern Firefox's own Reader View relies on).
+- The server has no HTTPS/TLS -- fine for loopback or trusted-LAN use,
+  not for exposing it beyond that without your own transport security.
+- Remote/listening-mode host permission requests (`optional_host_permissions`)
+  need Firefox 128+; older Firefox is limited to loopback servers.
 
 ## Credits
 

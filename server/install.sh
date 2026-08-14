@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Creates a venv, installs a torch build matched to your GPU (or CPU
-# if none detected), installs the rest of the dependencies, and
-# installs + starts a systemd --user service that keeps the server
-# running (see the loginctl note this script prints at the end for
-# boot-time start without needing to log in first).
+# Creates a venv, installs CPU-only torch, installs the rest of the
+# dependencies, and installs + starts a systemd --user service that
+# keeps the server running (see the loginctl note this script prints
+# at the end for boot-time start without needing to log in first).
 set -euo pipefail
 
 SERVER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -82,20 +81,8 @@ else
   "$PIP" install --upgrade pip >/dev/null
 fi
 
-echo "==> Detecting GPU for the torch build to install"
-if command -v rocminfo >/dev/null 2>&1 || [ -d /opt/rocm ]; then
-  echo "    ROCm detected -- installing ROCm-enabled torch."
-  echo "    (If this version doesn't match your installed ROCm, see"
-  echo "    https://pytorch.org/get-started/locally/ and re-run pip install"
-  echo "    torch --index-url ... --force-reinstall with the right tag.)"
-  "$PIP" install torch --index-url https://download.pytorch.org/whl/rocm6.2
-elif command -v nvidia-smi >/dev/null 2>&1; then
-  echo "    NVIDIA GPU detected -- installing CUDA-enabled torch."
-  "$PIP" install torch --index-url https://download.pytorch.org/whl/cu121
-else
-  echo "    No GPU detected -- installing CPU-only torch."
-  "$PIP" install torch --index-url https://download.pytorch.org/whl/cpu
-fi
+echo "==> Installing CPU-only torch"
+"$PIP" install torch --index-url https://download.pytorch.org/whl/cpu
 
 echo "==> Installing remaining Python dependencies"
 "$PIP" install -r "$SERVER_DIR/requirements.txt"

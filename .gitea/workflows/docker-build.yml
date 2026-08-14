@@ -1,5 +1,5 @@
-# Builds and pushes the companion server image (server/) to this
-# Gitea instance's container registry whenever server/ changes on
+# Builds and pushes the companion server image (server/, CPU only) to
+# this Gitea instance's container registry whenever server/ changes on
 # main, or on demand via the "Run workflow" button.
 #
 # Prerequisites (see server/README section "Docker" / repo README for
@@ -7,11 +7,13 @@
 #   1. An act_runner registered with this Gitea instance that has
 #      Docker access (Docker-in-Docker or a mounted docker socket --
 #      a property of how the runner itself is deployed, not this file).
-#   2. Settings > Actions > Secrets: add REGISTRY_TOKEN, a Personal
-#      Access Token (Settings > Applications > Generate New Token)
-#      with the "write:package" scope. Gitea's automatic token isn't
-#      reliable for container registry auth as of writing, so this
-#      has to be a real PAT, not left out.
+#   2. Settings > Actions > Secrets: CI_TOKEN (a Gitea Personal Access
+#      Token, Settings > Applications > Generate New Token, used for
+#      checkout) and DOCKER (a Personal Access Token with the
+#      "write:package" scope, used to log in to the container
+#      registry). Gitea's automatic per-run token isn't reliable for
+#      container registry auth as of writing, so DOCKER has to be a
+#      real PAT, not left unset.
 #
 # Edit REGISTRY_OWNER below to your Gitea username/org.
 name: Build and push companion server image
@@ -32,18 +34,11 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - variant: cpu
-            torch_index_url: https://download.pytorch.org/whl/cpu
-          - variant: rocm
-            torch_index_url: https://download.pytorch.org/whl/rocm6.2
-          - variant: cuda
-            torch_index_url: https://download.pytorch.org/whl/cu121
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.CI_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -53,15 +48,13 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ env.REGISTRY_OWNER }}
-          password: ${{ secrets.REGISTRY_TOKEN }}
+          password: ${{ secrets.DOCKER }}
 
-      - name: Build and push (${{ matrix.variant }})
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: server
-          build-args: |
-            TORCH_INDEX_URL=${{ matrix.torch_index_url }}
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/${{ env.IMAGE_NAME }}:${{ matrix.variant }}
-            ${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/${{ env.IMAGE_NAME }}:${{ matrix.variant }}-${{ gitea.sha }}
+            ${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/${{ env.IMAGE_NAME }}:${{ gitea.sha }}

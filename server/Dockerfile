@@ -1,6 +1,5 @@
-# Builds the Kokoro Reader companion server. CPU by default (works
-# anywhere); pass --build-arg TORCH_INDEX_URL=... for GPU builds. See
-# README.md ("Docker") for build/run examples for CPU, NVIDIA, and AMD.
+# Builds the Kokoro Reader companion server. CPU only -- see
+# README.md ("Docker") for build/run examples.
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -9,13 +8,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Installed separately from requirements.txt so the index URL (and
-# therefore which hardware backend you get) is a build-time choice.
-# Defaults to CPU -- the one build guaranteed to work on any machine
-# regardless of GPU vendor or whether one is even present.
-ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+# Installed separately from requirements.txt so it's easy to see this
+# is the one deliberate hardware-specific choice in the image (CPU
+# only -- see README's "Why CPU only" note).
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir torch --index-url "${TORCH_INDEX_URL}"
+    && pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
