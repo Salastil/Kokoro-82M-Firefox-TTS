@@ -1,0 +1,115 @@
+# Cuts an actual signed release: triggered by pushing a version tag
+# (vX.Y.Z), builds the extension at that exact commit, self-signs it
+# with Mozilla (AMO, unlisted/self-distribution channel), and publishes
+# a Gitea Release for the tag with the signed .xpi attached as a
+# release asset.
+#
+# Deliberately separate from build-extension.yml (which runs on every
+# push to main and only builds/lints, unsigned) -- AMO refuses to
+# re-sign a version it's already seen, and Gitea has no supported way
+# for one workflow run to pull an artifact out of a *different* run
+# (see go-gitea/gitea#32124), so signing has to happen fresh here
+# rather than reusing anything from the per-commit build.
+#
+# The tag you push (e.g. `git tag v0.2.5 && git push gitea v0.2.5`)
+# must name a commit whose extension/manifest.json version matches the
+# tag exactly (this workflow checks and fails loudly if it doesn't) --
+# that'll normally be a commit build-extension.yml already bumped to
+# 0.2.5 on main.
+#
+# Secrets needed (Settings > Actions > Secrets on the repo), same as
+# build-extension.yml plus AMO credentials:
+#   CI_TOKEN            A Gitea Personal Access Token, used for
+#                        checkout and to create the release/upload the
+#                        asset via the Gitea API.
+#   WEB_EXT_API_KEY      AMO API credentials -- generate at
+#   WEB_EXT_API_SECRET   https://addons.mozilla.org/developers/addon/api/key/.
+#                        web-ext picks both up automatically from the
+#                        environment.
+name: Sign and publish release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.2.5) -- must already exist"
+        required: true
+
+env:
+  GITEA_API: https://git.salastil.com/api/v1
+
+jobs:
+  sign-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ gitea.event.inputs.tag || gitea.ref }}
+          token: ${{ secrets.CI_TOKEN }}
+
+      - name: Resolve tag and check it matches manifest.json
+        id: tag
+        run: |
+          TAG="${{ gitea.event.inputs.tag || gitea.ref_name }}"
+          VERSION="${TAG#v}"
+          MANIFEST_VERSION=$(node -p "require('./extension/manifest.json').version")
+          if [ "$VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::Tag $TAG doesn't match extension/manifest.json version $MANIFEST_VERSION -- tag the commit that was actually bumped to $VERSION."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITEA_OUTPUT"
+          echo "version=$VERSION" >> "$GITEA_OUTPUT"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Lint extension
+        run: npm run lint:ext
+
+      - name: Sign extension with Mozilla (AMO)
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+        run: npm run sign:ext
+
+      - name: Find signed .xpi
+        id: xpi
+        run: |
+          FILE=$(ls web-ext-artifacts/*.xpi | head -n1)
+          if [ -z "$FILE" ]; then
+            echo "::error::No signed .xpi found in web-ext-artifacts/"
+            exit 1
+          fi
+          echo "path=$FILE" >> "$GITEA_OUTPUT"
+          echo "name=$(basename "$FILE")" >> "$GITEA_OUTPUT"
+
+      - name: Create Gitea release
+        id: release
+        run: |
+          RESPONSE=$(curl -sf -X POST \
+            -H "Authorization: token ${{ secrets.CI_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"${{ steps.tag.outputs.tag }}\",\"name\":\"Kokoro Reader ${{ steps.tag.outputs.tag }}\",\"body\":\"Signed .xpi built from ${{ steps.tag.outputs.tag }}.\"}" \
+            "${{ env.GITEA_API }}/repos/${{ gitea.repository }}/releases")
+          echo "$RESPONSE" | node -pe 'JSON.parse(require("fs").readFileSync(0)).id' > release_id.txt
+          echo "id=$(cat release_id.txt)" >> "$GITEA_OUTPUT"
+
+      - name: Upload signed .xpi to the release
+        run: |
+          curl -sf -X POST \
+            -H "Authorization: token ${{ secrets.CI_TOKEN }}" \
+            -F "attachment=@${{ steps.xpi.outputs.path }}" \
+            "${{ env.GITEA_API }}/repos/${{ gitea.repository }}/releases/${{ steps.release.outputs.id }}/assets?name=${{ steps.xpi.outputs.name }}"

@@ -202,9 +202,9 @@ printed on first start. "Test connection" should report the model
 status. Pointing this at a server on another machine instead? See
 "Remote access (listening mode)" above.
 
-Prefer a signed build over loading unpacked? Every push to `main` that
-touches the extension is auto-signed by CI and published as a
-downloadable `.xpi` build artifact -- see "Automatic builds" below.
+Prefer a signed build over loading unpacked? Tagged releases (see
+"Automatic builds" below) are signed by CI and published on the repo's
+Releases page as a downloadable `.xpi`.
 
 ## Use
 
@@ -241,26 +241,40 @@ Chromium) and, for the content script, `@mozilla/readability`.
 
 #### Automatic builds (Gitea Actions)
 
-`.gitea/workflows/build-extension.yml` builds, version-bumps, and
-signs the extension on every push to `main` that touches `src/`,
-`extension/`, or `build.mjs` (or on demand via "Run workflow"),
-publishing the resulting `.xpi` as the run's build artifact. AMO
-refuses to re-sign a version it's already seen, so the workflow bumps
-the patch version first (`npm run version:bump`, see
-`scripts/bump-version.mjs` -- `extension/manifest.json` is the source
-of truth, mirrored into `package.json`/`package-lock.json`) and pushes
-that bump straight back to `main` before building.
+Split into two workflows so AMO -- which refuses to re-sign a version
+it's already seen -- only gets asked to sign something once you
+actually want a release, not on every trivial commit:
 
-Needs three secrets (Settings > Actions > Secrets on the repo):
+- **`.gitea/workflows/build-extension.yml`** runs on every push to
+  `main` that touches `src/`, `extension/`, or `build.mjs` (or on
+  demand via "Run workflow"). It bumps the patch version (`npm run
+  version:bump`, see `scripts/bump-version.mjs` --
+  `extension/manifest.json` is the source of truth, mirrored into
+  `package.json`/`package-lock.json`), pushes that bump straight back
+  to `main`, then builds and lints. The unsigned build is published as
+  the run's build artifact -- a quick "does this still build" check,
+  not a distributable release.
+- **`.gitea/workflows/release.yml`** runs when you push a version tag
+  (`git tag v0.2.5 && git push gitea v0.2.5` -- the tag must match
+  `extension/manifest.json`'s version at that commit, normally
+  whatever `build-extension.yml` last bumped it to; the workflow fails
+  loudly if they don't match). It builds, self-signs with AMO
+  (`unlisted`/self-distribution channel), and publishes a **Gitea
+  Release** for that tag with the signed `.xpi` attached as a release
+  asset.
+
+Needs these secrets (Settings > Actions > Secrets on the repo):
 
 - **`CI_TOKEN`** -- a Gitea Personal Access Token (Settings >
-  Applications > Generate New Token) with repo write access, used for
-  checkout and to push the version-bump commit back to `main`.
+  Applications > Generate New Token) with repo read/write, used for
+  checkout, to push the version-bump commit back to `main`, and (in
+  `release.yml`) to create the release and upload the asset via the
+  Gitea API.
 - **`WEB_EXT_API_KEY`** / **`WEB_EXT_API_SECRET`** -- AMO API
   credentials from
-  [addons.mozilla.org/developers/addon/api/key](https://addons.mozilla.org/developers/addon/api/key/).
-  `web-ext` reads both automatically from the environment, no extra
-  config needed.
+  [addons.mozilla.org/developers/addon/api/key](https://addons.mozilla.org/developers/addon/api/key/),
+  used only by `release.yml`. `web-ext` reads both automatically from
+  the environment, no extra config needed.
 
 ## Architecture
 
@@ -375,8 +389,8 @@ Python-only.
   one point and has since been removed; see "Why Python" above.
 - Not listed on AMO or a Chrome/Brave store, so there's no auto-update
   channel -- CI produces a signed, self-distributed (`unlisted`) `.xpi`
-  per build (see "Automatic builds" above), but you install/update it
-  manually. `web-ext lint` reports 0 errors, 5 expected warnings:
+  per tagged release (see "Automatic builds" above), but you
+  install/update it manually. `web-ext lint` reports 0 errors, 5 expected warnings:
   `MANIFEST_FIELD_UNSUPPORTED` for `background.service_worker` (Firefox
   doesn't support this key, but tolerates its presence alongside
   `background.scripts`, which it does read -- this dual declaration is
