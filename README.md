@@ -178,8 +178,10 @@ file itself:
    ([go-gitea/gitea#23642](https://github.com/go-gitea/gitea/issues/23642)),
    so `DOCKER` has to be a real PAT, not left unset.
 
-Also edit `REGISTRY_OWNER: CHANGEME` near the top of the workflow file
-to your actual Gitea username/org before it'll push anywhere useful.
+`REGISTRY_OWNER` near the top of the workflow file is set to `salastil`
+-- change it if you fork this to push to a different Gitea
+username/org (it must be lowercase; container registries reject
+mixed-case repository paths).
 
 ## 2. Install the extension
 

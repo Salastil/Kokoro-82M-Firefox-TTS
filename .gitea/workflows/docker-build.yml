@@ -15,7 +15,6 @@
 #      container registry auth as of writing, so DOCKER has to be a
 #      real PAT, not left unset.
 #
-# Edit REGISTRY_OWNER below to your Gitea username/org.
 name: Build and push companion server image
 
 on:
@@ -28,7 +27,7 @@ on:
 
 env:
   REGISTRY: git.salastil.com
-  REGISTRY_OWNER: CHANGEME # <-- your Gitea username or org
+  REGISTRY_OWNER: salastil
   IMAGE_NAME: kokoro-reader-server
 
 jobs:
