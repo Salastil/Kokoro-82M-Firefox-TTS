@@ -17,6 +17,11 @@ class Config:
     host: str = "127.0.0.1"
     port: int = 8787
     token: str = ""
+    # Minutes of no synthesis requests before the model is unloaded from
+    # memory/VRAM, mirroring Ollama's default keep_alive behavior. 0
+    # disables auto-unload (model stays resident indefinitely, the old
+    # behavior).
+    idle_unload_minutes: float = 5.0
 
 
 def load_config() -> tuple[Config, Path, bool]:
@@ -44,5 +49,7 @@ def load_config() -> tuple[Config, Path, bool]:
         config.port = int(os.environ["KOKORO_PORT"])
     if os.environ.get("KOKORO_HOST"):
         config.host = os.environ["KOKORO_HOST"]
+    if os.environ.get("KOKORO_IDLE_UNLOAD_MINUTES"):
+        config.idle_unload_minutes = float(os.environ["KOKORO_IDLE_UNLOAD_MINUTES"])
 
     return config, CONFIG_PATH, is_new

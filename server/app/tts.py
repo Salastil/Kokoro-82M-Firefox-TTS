@@ -4,6 +4,9 @@ removed because it wasn't worth maintaining across two vendors nobody
 here could actually test against; see the README's "GPU acceleration"
 history note.
 """
+import gc
+import time
+
 import torch
 from kokoro import KPipeline
 
@@ -13,9 +16,10 @@ SAMPLE_RATE = 24000
 
 class ModelState:
     def __init__(self):
-        self.status = "loading"  # loading | ready | error
+        self.status = "loading"  # loading | ready | idle | error
         self.error = None
         self.pipelines = {}  # lang_code -> KPipeline
+        self.last_used = time.monotonic()  # bumped on every synth request; drives idle-unload
 
 
 def voice_lang_code(voice: str) -> str:
@@ -33,11 +37,22 @@ def load_model(state: ModelState):
         state.pipelines = {"a": pipeline_a, "b": pipeline_b}
 
         state.status = "ready"
+        state.last_used = time.monotonic()
         print("[kokoro] model ready (device=cpu)")
     except Exception as err:  # noqa: BLE001 -- surfaced via /health, want any failure caught
         state.status = "error"
         state.error = str(err)
         print(f"[kokoro] failed to load model: {err}")
+
+
+def unload_model(state: ModelState):
+    """Drops the loaded pipelines/weights, mirroring Ollama's idle
+    keep_alive unload. Runs in a worker thread (like load_model) since
+    freeing memory can block briefly."""
+    state.pipelines = {}
+    gc.collect()
+    state.status = "idle"
+    print("[kokoro] model unloaded after idle timeout.")
 
 
 def synthesize(state: ModelState, text: str, voice: str, speed: float):

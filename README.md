@@ -84,8 +84,15 @@ systemctl --user restart kokoro-reader-server   # after editing config.json
 ```
 
 Config lives at `~/.config/kokoro-reader-server/config.json`
-(`$XDG_CONFIG_HOME` if set) -- port and the auth token. Restart the
-service after editing it.
+(`$XDG_CONFIG_HOME` if set) -- host, port, the auth token, and
+`idle_unload_minutes`. Restart the service after editing it.
+
+The model unloads from memory after `idle_unload_minutes` (default
+5, matching Ollama's default `keep_alive`) of no synthesis requests, and
+reloads automatically -- transparently, on the next request -- the next
+time it's needed. Set it to `0` to disable auto-unload and keep the
+model resident indefinitely (the old behavior). Can also be set via the
+`KOKORO_IDLE_UNLOAD_MINUTES` env var, same as `KOKORO_PORT`/`KOKORO_HOST`.
 
 To run it without systemd (e.g. to test, or on non-Linux):
 
