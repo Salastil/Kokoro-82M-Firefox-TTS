@@ -1,6 +1,6 @@
 {
   "name": "kokoro-82m-firefox-tts",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Cross-browser (Firefox + Chromium) extension that reads articles or selected text aloud using Kokoro-82M TTS, synthesized by a companion server on your own machine (see server/).",
   "private": true,
   "type": "module",
